@@ -370,7 +370,7 @@ export default function App() {
           drags pass through everywhere except on the buttons. */}
       {driveMode && (
         <div data-testid="drive-touch-controls" role="group" aria-label="Touch drive controls"
-          className="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex items-end justify-between px-3">
+          className="pointer-events-none absolute inset-x-0 bottom-16 z-30 flex items-end justify-between px-3">
           <div className="pointer-events-auto flex gap-2">
             <button type="button" data-testid="drive-btn-left" aria-label="Hold to steer left"
               {...driveHold(() => { driveInputRef.current.steer = -1; }, () => { driveInputRef.current.steer = 0; })}
