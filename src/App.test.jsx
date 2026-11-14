@@ -169,4 +169,48 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Evidence' })).toBeNull();
   });
+
+  it('Drive mode: entry button opens the HUD with live rover state, exit returns to orbit', () => {
+    render(<App />);
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    const hud = screen.getByTestId('drive-hud');
+    expect(hud).toBeTruthy();
+    expect(screen.getByTestId('drive-speed').textContent).toContain('0.0 km/h');
+    expect(screen.getByTestId('drive-heading').textContent).toContain('0.0°');
+    // Malapert default position, 4 decimals.
+    expect(screen.getByTestId('drive-lat').textContent).toContain('-85.9900°');
+    expect(screen.getByTestId('drive-lon').textContent).toContain('-0.1250°');
+    expect(screen.getByTestId('drive-distance').textContent).toContain('0.0 m');
+    // Code-built label is stated in the HUD (and on the entry button).
+    expect(within(hud).getByText(/Code-built rover modelled on the Apollo LRV/)).toBeTruthy();
+    // Camera toggle + max-speed control + touch buttons exist.
+    expect(screen.getByTestId('drive-camera-toggle')).toBeTruthy();
+    expect(screen.getByLabelText('Maximum drive speed in kilometres per hour')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-forward')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-brake')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-reverse')).toBeTruthy();
+    // The panel and its tools are still reachable in Drive mode.
+    expect(screen.getByRole('button', { name: 'Open site comparison' })).toBeTruthy();
+    // Exit via the HUD button.
+    fireEvent.click(screen.getByRole('button', { name: 'Exit drive mode' }));
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+  });
+
+  it('Drive mode: Esc exits back to orbit', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+  });
+
+  it('Drive mode: camera toggle switches chase/driver', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    const toggle = screen.getByTestId('drive-camera-toggle');
+    expect(toggle.textContent).toContain('Chase cam');
+    fireEvent.click(toggle);
+    expect(toggle.textContent).toContain('Driver cam');
+  });
 });

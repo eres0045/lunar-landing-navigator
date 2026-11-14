@@ -17,8 +17,12 @@ import {
   SITES, TYPE_LABEL, getSite, fmt, fmtSigned, siteVerdict,
   compareSites, rankSites, findWindows, SOURCES, METHOD,
   REFERENCE_VALUES, PUBLISHED_ILLUMINATION, DISCLAIMER,
-  POWER_RULE, COMM_RULE,
+  POWER_RULE, COMM_RULE, powerVerdict, commVerdict,
 } from './lib/data.js';
+import {
+  LRV, createRover, roverVerdict, headingDeg,
+  speedKmh, distanceFromStart,
+} from './lib/rover.js';
 import LunarScene, { CAMERA_PRESETS } from './components/LunarScene.jsx';
 
 const DATE_CHIPS = [
@@ -95,6 +99,49 @@ export default function App() {
     sendCamCmd(dir === 'in' ? 'zoom-in' : 'zoom-out');
   };
 
+  // ---- Drive mode -----------------------------------------------------
+  // Physics runs in LunarScene's animation loop (it owns the rover
+  // group); App owns the input + HUD and reads the live state through
+  // these shared refs. The HUD polls the ref so the numbers update
+  // without re-rendering the 3D scene.
+  const [driveMode, setDriveMode] = useState(false);
+  const [driveCam, setDriveCam] = useState('chase');
+  const [maxSpeedKmh, setMaxSpeedKmh] = useState(LRV.topSpeedKmh);
+  const driveInputRef = useRef({ throttle: 0, reverse: 0, steer: 0, brake: false });
+  const roverStateRef = useRef(null);
+  const [hud, setHud] = useState(null);
+  const exitDrive = () => {
+    driveInputRef.current = { throttle: 0, reverse: 0, steer: 0, brake: false };
+    setDriveMode(false);
+  };
+  const enterDrive = () => {
+    if (!roverStateRef.current || roverStateRef.current.siteId !== site.id) {
+      roverStateRef.current = createRover(site, { maxSpeedKmh });
+    }
+    setDriveMode(true);
+  };
+  useEffect(() => {
+    if (!driveMode) { setHud(null); return undefined; }
+    const tick = () => {
+      const r = roverStateRef.current;
+      if (!r) {
+        setHud({ lat: site.lat, lon: site.lon, speedMs: 0, heading: 0, distanceM: 0,
+          sunAlt: verdict.sun.alt, earthAlt: verdict.earth.alt,
+          power: verdict.power, comm: verdict.comm });
+        return;
+      }
+      const v = roverVerdict(date, r, { powerVerdict, commVerdict });
+      setHud({
+        lat: v.lat, lon: v.lon, speedMs: r.speedMs, heading: headingDeg(r),
+        distanceM: distanceFromStart(r.northM, r.eastM),
+        sunAlt: v.sun.alt, earthAlt: v.earth.alt, power: v.power, comm: v.comm,
+      });
+    };
+    tick();
+    const id = setInterval(tick, 150);
+    return () => clearInterval(id);
+  }, [driveMode, date, site, verdict]);
+
   // ---- Modals ---------------------------------------------------------
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareIds, setCompareIds] = useState(['malapert', 'connecting-ridge', 'slater', 'gerlache2']);
@@ -113,6 +160,41 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [anyModal]);
+
+  // Keyboard driving: WASD / arrows + Space brake + Esc exit. Keys
+  // never fight the panel — ignored in inputs/selects/textareas and
+  // while any modal is open.
+  useEffect(() => {
+    if (!driveMode) return undefined;
+    const isEditable = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
+    const applyKey = (e, down) => {
+      const inp = driveInputRef.current;
+      switch (e.key) {
+        case 'w': case 'W': case 'ArrowUp': inp.throttle = down ? 1 : 0; break;
+        case 's': case 'S': case 'ArrowDown': inp.reverse = down ? 1 : 0; break;
+        case 'a': case 'A': case 'ArrowLeft': inp.steer = down ? -1 : (inp.steer < 0 ? 0 : inp.steer); break;
+        case 'd': case 'D': case 'ArrowRight': inp.steer = down ? 1 : (inp.steer > 0 ? 0 : inp.steer); break;
+        case ' ': inp.brake = down; break;
+        default: return false;
+      }
+      return true;
+    };
+    const onDown = (e) => {
+      if (isEditable(e.target) || anyModal) return;
+      if (e.key === 'Escape') { exitDrive(); return; }
+      if (applyKey(e, true)) e.preventDefault();
+    };
+    const onUp = (e) => {
+      if (isEditable(e.target) || anyModal) return;
+      applyKey(e, false);
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [driveMode, anyModal]);
 
   const comparison = useMemo(
     () => (compareOpen ? compareSites(date, compareIds) : []),
@@ -140,12 +222,104 @@ export default function App() {
           verdicts={ranked}
           cameraCmd={camCmd}
           onSelectSite={setSiteId}
+          driveMode={driveMode}
+          driveCam={driveCam}
+          driveInputRef={driveInputRef}
+          roverStateRef={roverStateRef}
+          maxSpeedKmh={maxSpeedKmh}
         />
       </div>
 
       <div className="glass-text pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-xs font-bold tracking-wide text-slate-100 backdrop-blur-md">
         🌙 Lunar Landing Site Navigator
       </div>
+
+      {/* Drive HUD — live rover state while in Drive mode. */}
+      {driveMode && hud && (
+        <div data-testid="drive-hud" className="absolute right-3 top-12 z-20 w-[280px] rounded-2xl border border-white/20 bg-slate-900/85 p-3 shadow-2xl backdrop-blur-md">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-sm font-bold text-slate-100">🚀 Driving — {site.name}</h2>
+            <button type="button" onClick={exitDrive} aria-label="Back to orbit"
+              className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕ Back to orbit</button>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            Code-built rover modelled on the Apollo LRV — not the flight vehicle.
+            Terrain is a smooth sphere; physics is a kinematic approximation.
+          </p>
+          <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
+            <p>Speed: <span data-testid="drive-speed" className="font-bold tabular-nums">{fmt(speedKmh({ speedMs: hud.speedMs }), 1)} km/h</span>
+              {' '}({fmt(hud.speedMs, 2)} m/s)</p>
+            <p>Heading: <span data-testid="drive-heading" className="font-bold tabular-nums">{fmt(hud.heading, 1)}°</span></p>
+            <p>Position: <span data-testid="drive-lat" className="font-bold tabular-nums">{fmt(hud.lat, 4)}°</span>
+              {' '}<span data-testid="drive-lon" className="font-bold tabular-nums">{fmt(hud.lon, 4)}°</span></p>
+            <p>Distance from landing point: <span data-testid="drive-distance" className="font-bold tabular-nums">{fmt(hud.distanceM, 1)} m</span></p>
+            <p>☀️ Sun: <span data-testid="drive-sun-alt" className="font-bold tabular-nums">{fmtSigned(hud.sunAlt)}</span>{' '}
+              <span data-testid="drive-power" className="font-bold" style={{ color: hud.power.color }}>{hud.power.label}</span></p>
+            <p>🌍 Earth: <span data-testid="drive-earth-alt" className="font-bold tabular-nums">{fmtSigned(hud.earthAlt)}</span>{' '}
+              <span data-testid="drive-comm" className="font-bold" style={{ color: hud.comm.color }}>{hud.comm.label}</span></p>
+          </div>
+          <div className="mt-2">
+            <label htmlFor="drive-max-speed" className="text-xs font-semibold text-slate-300">
+              Max speed: {maxSpeedKmh} km/h (LRV design 13 · Apollo 17 achieved 18)
+            </label>
+            <input id="drive-max-speed" type="range" min="5" max="18" step="1" value={maxSpeedKmh}
+              aria-label="Maximum drive speed in kilometres per hour"
+              onChange={(e) => setMaxSpeedKmh(Number(e.target.value))}
+              className="mt-1 w-full accent-emerald-400" />
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <button type="button" onClick={() => setDriveCam((c) => (c === 'chase' ? 'driver' : 'chase'))}
+              aria-label="Toggle drive camera" data-testid="drive-camera-toggle"
+              className="flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-2 py-1.5 text-xs font-semibold text-slate-200">
+              📷 {driveCam === 'chase' ? 'Chase cam → Driver cam' : 'Driver cam → Chase cam'}
+            </button>
+            <button type="button" onClick={exitDrive} aria-label="Exit drive mode"
+              className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-400/20 px-2 py-1.5 text-xs font-semibold text-emerald-200">
+              ← Back to orbit (Esc)
+            </button>
+          </div>
+          {/* Touch controls — hold to drive. */}
+          <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label="Touch drive controls">
+            <span />
+            <button type="button" data-testid="drive-btn-forward" aria-label="Hold to drive forward"
+              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.throttle = 1; }}
+              onPointerUp={() => { driveInputRef.current.throttle = 0; }}
+              onPointerLeave={() => { driveInputRef.current.throttle = 0; }}
+              onPointerCancel={() => { driveInputRef.current.throttle = 0; }}
+              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▲</button>
+            <span />
+            <button type="button" data-testid="drive-btn-left" aria-label="Hold to steer left"
+              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.steer = -1; }}
+              onPointerUp={() => { driveInputRef.current.steer = 0; }}
+              onPointerLeave={() => { driveInputRef.current.steer = 0; }}
+              onPointerCancel={() => { driveInputRef.current.steer = 0; }}
+              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">◀</button>
+            <button type="button" data-testid="drive-btn-brake" aria-label="Hold to brake"
+              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.brake = true; }}
+              onPointerUp={() => { driveInputRef.current.brake = false; }}
+              onPointerLeave={() => { driveInputRef.current.brake = false; }}
+              onPointerCancel={() => { driveInputRef.current.brake = false; }}
+              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-rose-400/40">⏹</button>
+            <button type="button" data-testid="drive-btn-right" aria-label="Hold to steer right"
+              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.steer = 1; }}
+              onPointerUp={() => { driveInputRef.current.steer = 0; }}
+              onPointerLeave={() => { driveInputRef.current.steer = 0; }}
+              onPointerCancel={() => { driveInputRef.current.steer = 0; }}
+              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▶</button>
+            <span />
+            <button type="button" data-testid="drive-btn-reverse" aria-label="Hold to reverse"
+              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.reverse = 1; }}
+              onPointerUp={() => { driveInputRef.current.reverse = 0; }}
+              onPointerLeave={() => { driveInputRef.current.reverse = 0; }}
+              onPointerCancel={() => { driveInputRef.current.reverse = 0; }}
+              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▼</button>
+            <span />
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+            Keys: W/↑ forward · S/↓ reverse · A/D or ←/→ steer · Space brake · Esc exit.
+          </p>
+        </div>
+      )}
 
       {panelHidden ? (
         <button type="button" onClick={() => setPanelHidden(false)}
@@ -219,6 +393,13 @@ export default function App() {
                   </button>
                 ))}
               </div>
+
+              {/* Drive mode */}
+              <button type="button" onClick={enterDrive} aria-label="Drive on the surface"
+                className="mt-2 block w-full rounded-lg border border-rose-400/40 bg-rose-400/10 px-3 py-2 text-left text-sm font-semibold text-rose-200 hover:border-rose-300">
+                🚀 Drive on the surface — explore {site.name} by rover
+                <span className="block text-xs font-normal text-slate-400">Code-built rover modelled on the Apollo LRV · WASD / arrows to drive, Space to brake, Esc to return to orbit</span>
+              </button>
 
               {/* Site picker */}
               <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Landing site — 13 published points</h3>

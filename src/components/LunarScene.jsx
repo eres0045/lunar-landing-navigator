@@ -24,6 +24,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sunEarthAt } from '../lib/ephemeris.js';
 import { SITES } from '../lib/data.js';
+import { createRover, step as roverStep, roverLatLon } from '../lib/rover.js';
+import { createRoverGroup } from './RoverModel.jsx';
 
 const D2R = Math.PI / 180;
 
@@ -54,6 +56,30 @@ export function altAzToWorld(latDeg, lonDeg, altDeg, azDeg) {
     .normalize();
 }
 
+/** Local alt/az at a site → direction in the DRIVE tangent-plane
+ *  frame (x = east, y = up, z = north), metres. Directions only —
+ *  the Sun/Earth are placed along these at local distances. */
+export function altAzToLocal(altDeg, azDeg) {
+  const alt = altDeg * D2R;
+  const az = azDeg * D2R;
+  return new THREE.Vector3(
+    Math.cos(alt) * Math.sin(az),
+    Math.sin(alt),
+    Math.cos(alt) * Math.cos(az),
+  );
+}
+
+/** Deterministic PRNG so the drive-scene rocks are stable per load. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export const CAMERA_PRESETS = {
   wide: { label: 'Wide', theta: 0.6, phi: 1.35, radius: 4.6 },
   pole: { label: 'South Pole', theta: 2.4, phi: 2.55, radius: 3.1 },
@@ -63,12 +89,28 @@ export const CAMERA_PRESETS = {
 
 const POWER_COLOR = { SUNLIT: 0x34d399, 'LOW SUN': 0xfbbf24, DARK: 0x94a3b8 };
 
-export default function LunarScene({ date, site, verdicts, cameraCmd, onSelectSite }) {
+export default function LunarScene({
+  date, site, verdicts, cameraCmd, onSelectSite,
+  driveMode = false, driveCam = 'chase', driveInputRef, roverStateRef, maxSpeedKmh = 13,
+}) {
   const mountRef = useRef(null);
   const [webglOk, setWebglOk] = useState(false);
   const stateRef = useRef(null);
-  const propsRef = useRef({ date, site, verdicts });
-  propsRef.current = { date, site, verdicts };
+  const propsRef = useRef({ date, site, verdicts, driveMode, driveCam });
+  propsRef.current = { date, site, verdicts, driveMode, driveCam };
+
+  // (Re)create the rover when Drive mode is entered or the site
+  // changes under it; a max-speed change only retunes the cap.
+  useEffect(() => {
+    if (!driveMode || !roverStateRef) return;
+    const cur = roverStateRef.current;
+    if (!cur || cur.siteId !== site.id) {
+      roverStateRef.current = createRover(site, { maxSpeedKmh });
+    } else {
+      cur.maxSpeedMs = (maxSpeedKmh * 1000) / 3600;
+      cur.maxSpeedKmh = maxSpeedKmh;
+    }
+  }, [driveMode, site, maxSpeedKmh, roverStateRef]);
 
   // Camera commands from the panel (zoom + presets), applied once each.
   useEffect(() => {
@@ -222,6 +264,61 @@ export default function LunarScene({ date, site, verdicts, cameraCmd, onSelectSi
       () => { /* keep the scene without LRO */ },
     );
 
+    // ---- Drive mode: LOCAL meter-scale scene ----------------------
+    // The global scene is unit-sphere scale (1 m ≈ 5.8e-7 units), so
+    // float32 precision breaks if the rover moves in world units.
+    // Drive mode therefore HIDES the Moon sphere/markers/LRO and
+    // renders a tangent-plane frame centred on the site: a ~500 m
+    // ground disc, the code-built rover at the origin, Sun/Earth
+    // placed by alt/az DIRECTION from the site (same ephemeris,
+    // distances in metres). The rover moves in metres in this frame.
+    const driveGroup = new THREE.Group();
+    driveGroup.visible = false;
+    scene.add(driveGroup);
+    // Dim fill so the rover stays readable when the Sun sits below
+    // the horizon (common at the poles) — it does not fake a Sun.
+    driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x1a1a22, 0.55));
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(500, 64),
+      new THREE.MeshStandardMaterial({ color: 0x8f8d88, roughness: 1, metalness: 0 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    driveGroup.add(ground);
+    // Distance rings (50 / 100 / 200 m) so motion is judgeable.
+    for (const r of [50, 100, 200]) {
+      const ringGeo = new THREE.RingGeometry(r - 0.3, r + 0.3, 64);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x6b7280, side: THREE.DoubleSide });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.rotation.x = -Math.PI / 2;
+      ringMesh.position.y = 0.02;
+      driveGroup.add(ringMesh);
+    }
+    // Landing-point ring at the origin (the rover starts here).
+    const homeRing = new THREE.Mesh(
+      new THREE.RingGeometry(1.4, 1.7, 32),
+      new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide }),
+    );
+    homeRing.rotation.x = -Math.PI / 2;
+    homeRing.position.y = 0.03;
+    driveGroup.add(homeRing);
+    // Scattered rocks (deterministic) for motion reference.
+    const rockRand = mulberry32(20261114);
+    const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6e6c68, roughness: 1, metalness: 0 });
+    for (let i = 0; i < 140; i++) {
+      const rock = new THREE.Mesh(rockGeo, rockMat);
+      const a = rockRand() * Math.PI * 2;
+      const d = 8 + rockRand() * 240;
+      const s = 0.2 + rockRand() * 1.3;
+      rock.scale.setScalar(s);
+      rock.position.set(Math.cos(a) * d, s * 0.25, Math.sin(a) * d);
+      rock.rotation.set(rockRand() * 3, rockRand() * 3, rockRand() * 3);
+      driveGroup.add(rock);
+    }
+    // Code-built rover (see RoverModel.jsx for the GLB swap-in hook).
+    const roverParts = createRoverGroup();
+    driveGroup.add(roverParts.group);
+
     // Camera orbit state (spherical around the Moon centre).
     const orbit = {
       theta: 0.6, phi: 1.35, radius: 4.6,
@@ -275,10 +372,95 @@ export default function LunarScene({ date, site, verdicts, cameraCmd, onSelectSi
     let raf = 0;
     let dead = false;
     const clock = new THREE.Clock();
+    let elapsed = 0;
+    let lastDriveMode = false;
+    const driveLook = new THREE.Vector3(0, 1, 5);
     const animate = () => {
       if (dead) return;
       raf = requestAnimationFrame(animate);
-      const t = clock.getElapsedTime();
+      const dt = Math.min(clock.getDelta(), 0.25);
+      elapsed += dt;
+      const t = elapsed;
+      const { date, site, verdicts, driveMode, driveCam } = propsRef.current;
+
+      if (driveMode !== lastDriveMode) {
+        lastDriveMode = driveMode;
+        camera.near = driveMode ? 0.1 : 0.1;
+        camera.far = driveMode ? 5000 : 200;
+        camera.updateProjectionMatrix();
+      }
+
+      if (driveMode) {
+        // ---- Drive frame: hide the orbit scene, show the local one.
+        moon.visible = false;
+        ring.visible = false;
+        lroGroup.visible = false;
+        for (const m of markers.values()) m.visible = false;
+        driveGroup.visible = true;
+
+        const rover = roverStateRef?.current;
+        const input = driveInputRef?.current || {};
+        if (rover) {
+          roverStep(rover, input, dt);
+          // Local frame: x = east, y = up, z = north.
+          roverParts.group.position.set(rover.eastM, rover.heightM, rover.northM);
+          roverParts.group.rotation.order = 'YXZ';
+          roverParts.group.rotation.y = rover.headingRad;
+          roverParts.group.rotation.x = -rover.pitchRad;
+          roverParts.group.rotation.z = rover.rollRad;
+          for (const w of Object.values(roverParts.wheels)) w.rotation.x = rover.wheelAngleRad;
+          roverParts.steerGroups.front.rotation.y = rover.steerRad;
+          roverParts.steerGroups.rear.rotation.y = -rover.steerRad;
+
+          // Chase cam (behind/above, follows heading) or driver cam.
+          const fwd = new THREE.Vector3(Math.sin(rover.headingRad), 0, Math.cos(rover.headingRad));
+          const pos = roverParts.group.position;
+          let camTarget;
+          let lookTarget;
+          if (driveCam === 'driver') {
+            // Ahead of the mast/dish (z ≈ +1.3) so the antenna is
+            // behind the camera, not filling the frame.
+            camTarget = pos.clone().addScaledVector(fwd, 1.6).add(new THREE.Vector3(0, 1.5, 0));
+            lookTarget = pos.clone().addScaledVector(fwd, 30).add(new THREE.Vector3(0, 0.6, 0));
+          } else {
+            camTarget = pos.clone().addScaledVector(fwd, -7).add(new THREE.Vector3(0, 3.2, 0));
+            lookTarget = pos.clone().addScaledVector(fwd, 5).add(new THREE.Vector3(0, 1, 0));
+          }
+          camera.position.lerp(camTarget, driveCam === 'driver' ? 0.5 : 0.12);
+          driveLook.lerp(lookTarget, 0.2);
+          camera.lookAt(driveLook);
+        }
+
+        // Sun/Earth in the LOCAL frame, from the ephemeris at the
+        // rover's current lat/lon (directions only; distances in m).
+        const livePos = rover
+          ? sunEarthAt(date, roverLatLon(rover).lat, roverLatLon(rover).lon)
+          : sunEarthAt(date, site.lat, site.lon);
+        const sunLocal = altAzToLocal(livePos.sun.alt, livePos.sun.az);
+        const earthLocal = altAzToLocal(livePos.earth.alt, livePos.earth.az);
+        sunLight.position.copy(sunLocal).multiplyScalar(300);
+        sunLight.target.position.copy(roverParts.group.position);
+        sunLight.target.updateMatrixWorld();
+        sunDisc.position.copy(sunLocal).multiplyScalar(400);
+        sunDisc.scale.setScalar(4); // ~0.26° angular radius at 400 m
+        sunDisc.visible = livePos.sun.alt > -8;
+        earth.position.copy(earthLocal).multiplyScalar(350);
+        earth.scale.setScalar(40); // ~2.3° across at 350 m
+        earth.visible = livePos.earth.alt > -8;
+        earth.rotation.y = t * 0.02;
+
+        renderer.render(scene, camera);
+        return;
+      }
+
+      // ---- Orbit frame (unchanged behaviour).
+      moon.visible = true;
+      ring.visible = true;
+      lroGroup.visible = true;
+      for (const m of markers.values()) m.visible = true;
+      driveGroup.visible = false;
+      sunDisc.scale.setScalar(1);
+      earth.scale.setScalar(1);
       // Ease the camera toward the desired framing.
       orbit.theta += (orbit.desired.theta - orbit.theta) * 0.08;
       orbit.phi += (orbit.desired.phi - orbit.phi) * 0.08;
@@ -292,11 +474,11 @@ export default function LunarScene({ date, site, verdicts, cameraCmd, onSelectSi
       camera.lookAt(orbit.look);
 
       // Live Sun/Earth from the ephemeris at the selected site + date.
-      const { date, site, verdicts } = propsRef.current;
       const pos = sunEarthAt(date, site.lat, site.lon);
       const sunDir = altAzToWorld(site.lat, site.lon, pos.sun.alt, pos.sun.az);
       const earthDir = altAzToWorld(site.lat, site.lon, pos.earth.alt, pos.earth.az);
       sunLight.position.copy(sunDir).multiplyScalar(8);
+      sunLight.target.position.set(0, 0, 0);
       sunDisc.position.copy(sunDir).multiplyScalar(14);
       sunDisc.visible = pos.sun.alt > -8;
       earth.position.copy(earthDir).multiplyScalar(6);
