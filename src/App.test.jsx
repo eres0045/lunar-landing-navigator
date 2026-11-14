@@ -1,351 +1,172 @@
 /**
- * App tests — the MINIMAL immersive rebuild (2026-11-11, Ronit: "space
- * with iss and interior and for fire control transparent ui nothing else
- * nothing dashboard").
+ * App tests — Lunar Landing Site Navigator.
  *
- * jsdom has no WebGL, so FireLab3D shows its no-WebGL fallback — the
- * panel, verdict line and camera section are all App-level and fully
- * testable here. Verdict MATH is asserted through the one-line readout
- * (same getVerdict/getLiveVerdict values the old card showed).
+ * jsdom has no WebGL, so LunarScene shows its no-WebGL fallback — the
+ * panel, verdict line and modals are all App-level and fully testable
+ * here. Ephemeris MATH is asserted in src/lib/ephemeris.test.js and
+ * src/lib/data.test.js; these tests assert the UI shows those values.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import App from './App.jsx';
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe('App — minimal fire lab (jsdom has no WebGL)', () => {
-  it('renders the title chip, the panel and the SIBAL + Exploration GAP verdict line on load', () => {
+describe('App — lunar navigator (jsdom has no WebGL)', () => {
+  it('renders the title chip, the panel and the Malapert Nov 14 verdict line on load', () => {
     render(<App />);
-    expect(screen.getByText('The 34% Question')).toBeTruthy();
-    expect(screen.getByText('🔥 Fire control')).toBeTruthy();
-    // Default state: SIBAL fabric + Exploration -> GAP 11.9 O2 pts.
-    expect(screen.getByText(/SIBAL fabric · Exploration 34%/)).toBeTruthy();
-    expect(screen.getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
-    // No-WebGL fallback from the scene (jsdom only).
-    expect(screen.getByText(/The 3D fire lab needs WebGL/)).toBeTruthy();
-    // Honesty + credits lines live in the panel now.
-    expect(screen.getByText(/Flame is illustrative — verdicts come from real NASA PSI test data\./)).toBeTruthy();
-    expect(screen.getByText(/Models: uperesito \(ISS, CC-BY\) · Space Explorers Academy \(ISS interior, CC BY-NC-SA 4\.0\) · LasquetiSpice \(astronaut, CC-BY\) · dannzjs \(Dragon, CC-BY\) · pergamond \(Int-Ball, CC-BY\) · Sun texture: Solar System Scope, CC BY 4\.0 · Data: NASA PSI/)).toBeTruthy();
+    expect(screen.getByText('🌙 Lunar Landing Site Navigator')).toBeTruthy();
+    expect(screen.getByText('🌙 Navigator')).toBeTruthy();
+    // Default: Malapert, Nov 14 12:00 UTC — Sun −0.49° LOW SUN, Earth +0.13° VISIBLE.
+    expect(screen.getByText(/Malapert Massif · 2026-11-14 12:00 UTC/)).toBeTruthy();
+    // LOW SUN / VISIBLE appear twice: the verdict line and the badge.
+    expect(screen.getAllByText(/LOW SUN/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/VISIBLE/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/−0\.49°/)).toBeTruthy();
+    expect(screen.getByText(/The 3D Moon scene needs WebGL/)).toBeTruthy();
+    // The flat-horizon caveat is always visible.
+    expect(screen.getByText(/Planning aid only, not for flight decisions\./)).toBeTruthy();
+    // The verdict rules are stated plainly.
+    expect(screen.getByText(/POWER rule \(flat-horizon geometry\)/)).toBeTruthy();
+    expect(screen.getByText(/COMM rule \(flat-horizon geometry\)/)).toBeTruthy();
   });
 
-  it('the only UI is the panel + title + camera section — no dashboard anywhere', () => {
+  it('site picker lists all 13 sites, grouped, with the extras labelled by type', () => {
     render(<App />);
-    // Sliders + material picker + camera section are present.
-    expect(screen.getByLabelText('Oxygen percent')).toBeTruthy();
-    expect(screen.getByLabelText('Pressure psi')).toBeTruthy();
-    expect(screen.getByLabelText('Flow cm per second')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Methanol droplet/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy();
-    for (const label of ['Wide', 'Chamber', 'ISS', 'Inside', 'Earth']) {
-      expect(screen.getByRole('button', { name: `Camera view: ${label}` })).toBeTruthy();
-    }
-    // No top-right toggle anymore — the panel's CAMERA section is the
-    // only camera control.
-    expect(screen.queryByRole('button', { name: /Exterior — Earth \+ ISS/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Inside the station/ })).toBeNull();
-    // Dashboard pieces are GONE: no tabs, no verdict card, no missions,
-    // no evidence/scatter, no ranking, no model viewer, no DOI text.
-    expect(screen.queryByText(/Evidence — test cloud/)).toBeNull();
-    expect(screen.queryByText(/Start mission/)).toBeNull();
-    expect(screen.queryByText(/Coverage ≠ safety\./)).toBeNull();
-    expect(screen.queryByText(/30-second demo beats/)).toBeNull();
-    expect(screen.queryByText(/997 PSI test rows plotted/)).toBeNull();
-    expect(screen.queryByText(/No model for Orion/)).toBeNull();
-    expect(screen.queryByText(/DOI/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Peak Near Cabeus B/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Slater Plain/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Connecting Ridge CR1/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Shoemaker PSR/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Sverdrup PSR/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Faustini Rim A PSR/ })).toBeTruthy();
+    expect(screen.getByText(/Illumination-study spot/)).toBeTruthy();
+    // 3 site buttons + the intro line ("labelled PSR centres / study spots").
+    expect(screen.getAllByText(/PSR centre/).length).toBe(4);
   });
 
-  it('demo flow: Exploration chip -> SIBAL GAP 11.9 O2 pts', () => {
+  it('full-Moon chip: Malapert SUNLIT, Sun ≈ +5.53°, Moon 99.8% illuminated', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Exploration · 34% O₂/ }));
-    expect(screen.getByText(/SIBAL fabric · Exploration 34%/)).toBeTruthy();
-    expect(screen.getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Full Moon · Nov 24 14:53 UTC/ }));
+    expect(screen.getByText(/Malapert Massif · 2026-11-24 14:53 UTC/)).toBeTruthy();
+    expect(screen.getAllByText(/SUNLIT/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/\+5\.53°/)).toBeTruthy();
+    expect(screen.getByText(/99\.8%/)).toBeTruthy();
   });
 
-  it('demo flow: Methanol droplet at Exploration -> pressure GAP 1.98 psi', () => {
+  it('switching to Connecting Ridge shows SUNLIT + BELOW HORIZON and the published 88.1% figure', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Exploration · 34% O₂/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Methanol droplet/ }));
-    expect(screen.getByText(/Methanol droplet · Exploration 34%/)).toBeTruthy();
-    expect(screen.getByText(/GAP 1\.98 psi/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Connecting Ridge CR1/ }));
+    expect(screen.getByText(/Connecting Ridge CR1 · 2026-11-14 12:00 UTC/)).toBeTruthy();
+    expect(screen.getAllByText(/SUNLIT/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/BELOW HORIZON/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/88\.1% illuminated at 2 m/)).toBeTruthy();
+    expect(screen.getByText(/92\.5% at 10 m/)).toBeTruthy();
   });
 
-  it('demo flow: Methanol droplet at Orion -> TESTED', () => {
+  it('new-Moon chip: Malapert DARK, Moon 0.2% illuminated', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Orion · 26\.5% O₂/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Methanol droplet/ }));
-    expect(screen.getByText(/Methanol droplet · Orion 26\.5%/)).toBeTruthy();
-    expect(screen.getByText(/TESTED/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /New Moon · Nov 9 07:02 UTC/ }));
+    expect(screen.getAllByText(/DARK/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/0\.2%/)).toBeTruthy();
   });
 
-  it('free play: dragging the O2 slider to 30% gives the live GAP 7.9', () => {
+  it('camera presets exist and switch — South Pole, then Wide back', () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText('Oxygen percent'), { target: { value: '30' } });
-    expect(screen.getByText(/Custom cabin · 30% O₂ @ 8\.2 psi/)).toBeTruthy();
-    expect(screen.getByText(/GAP 7\.9 O₂ pts/)).toBeTruthy();
-  });
-
-  it('camera presets switch views — Inside goes in, Wide comes back out', () => {
-    render(<App />);
-    const inside = screen.getByRole('button', { name: 'Camera view: Inside' });
+    const pole = screen.getByRole('button', { name: 'Camera view: South Pole' });
     const wide = screen.getByRole('button', { name: 'Camera view: Wide' });
     expect(wide.getAttribute('aria-pressed')).toBe('true');
-    expect(inside.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(inside);
-    expect(inside.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(pole);
+    expect(pole.getAttribute('aria-pressed')).toBe('true');
     expect(wide.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(wide);
     expect(wide.getAttribute('aria-pressed')).toBe('true');
-    expect(inside.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('zoom buttons exist and clear the active preset', () => {
-    render(<App />);
-    const chamber = screen.getByRole('button', { name: 'Camera view: Chamber' });
-    fireEvent.click(chamber);
-    expect(chamber.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
-    expect(chamber.getAttribute('aria-pressed')).toBe('false');
-    // Zoom out is a plain action too — no crash, no preset re-selected.
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
-    expect(screen.getByRole('button', { name: 'Camera view: Wide' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy();
   });
 
   it('panel collapses to header + verdict line, and expands again', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse fire controls' }));
-    expect(screen.queryByLabelText('Oxygen percent')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Methanol droplet/ })).toBeNull();
-    // The verdict line stays visible when collapsed.
-    expect(screen.getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Expand fire controls' }));
-    expect(screen.getByLabelText('Oxygen percent')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse navigator controls' }));
+    expect(screen.queryByLabelText('Date and time (UTC)')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Slater Plain/ })).toBeNull();
+    expect(screen.getByText(/LOW SUN/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand navigator controls' }));
+    expect(screen.getByLabelText('Date and time (UTC)')).toBeTruthy();
   });
 
   it('panel hides entirely via the ✕ button and comes back via the restore pill', () => {
     render(<App />);
-    expect(screen.queryByRole('button', { name: 'Show fire controls' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Hide fire control panel' }));
-    // The whole panel is gone — sliders, verdict line, credits.
-    expect(screen.queryByLabelText('Oxygen percent')).toBeNull();
-    expect(screen.queryByText(/GAP 11\.9 O₂ pts/)).toBeNull();
-    expect(screen.queryByText(/^Models:/)).toBeNull();
-    // Title chip stays; the camera section is IN the panel, so it is gone too.
-    expect(screen.getByText('The 34% Question')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Camera view: Inside' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Show fire controls' }));
-    expect(screen.getByLabelText('Oxygen percent')).toBeTruthy();
-    expect(screen.getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide navigator panel' }));
+    expect(screen.queryByLabelText('Date and time (UTC)')).toBeNull();
+    expect(screen.queryByText(/LOW SUN/)).toBeNull();
+    expect(screen.getByText('🌙 Lunar Landing Site Navigator')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show navigator controls' }));
+    expect(screen.getByLabelText('Date and time (UTC)')).toBeTruthy();
   });
 
-  it('live API: the UI renders the API verdict, not the bundled one', async () => {
-    // The mock API deliberately returns a DIFFERENT verdict for the
-    // default SIBAL + Exploration state (a GAP the bundled data does not
-    // have), so the test proves the line comes from the API response.
-    const apiVerdict = {
-      material: 'SIBAL fabric', atmosphere: 'Exploration', kind: 'GAP_O2',
-      overall: 'GAP (O2)', o2_nearest: 22.1, o2_distance_pts: 5.5,
-      o2_nearest_row: ['PSI-99', 'Sample 2-5'], o2_verdict: 'GAP',
-      pressure_verdict: 'NOT RECORDED',
-    };
-    const fetchMock = vi.fn(async (url) => {
-      const u = String(url);
-      if (u.includes('/api/verdict')) return { ok: true, json: async () => apiVerdict };
-      if (u.includes('/api/materials')) return { ok: true, json: async () => ({ materials: [] }) };
-      if (u.includes('/api/scatter')) return { ok: true, json: async () => ({ points: [] }) };
-      if (u.includes('/api/ranking')) return { ok: true, json: async () => ({ cabin: [], gases: [] }) };
-      return { ok: false, json: async () => ({}) };
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('compare modal opens with the default 4 sites at Nov 14 12:00 UTC', async () => {
     render(<App />);
-    // Probe succeeds -> the live-API tag appears...
-    expect(await screen.findByText(/live API/)).toBeTruthy();
-    // ...and the verdict line switches to the API's value.
-    await waitFor(() => expect(screen.getByText(/GAP 5\.5 O₂ pts/)).toBeTruthy());
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/verdict?material=SIBAL'), expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: 'Open site comparison' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Compare sites' });
+    expect(within(dialog).getByText(/Compare sites — 2026-11-14 12:00 UTC/)).toBeTruthy();
+    // Each compared site appears twice in the dialog: the toggle chip
+    // and the table row.
+    expect(within(dialog).getAllByText('Malapert Massif').length).toBe(2);
+    expect(within(dialog).getAllByText('Connecting Ridge CR1').length).toBe(2);
+    expect(within(dialog).getAllByText('Slater Plain').length).toBe(2);
+    // Malapert row: LOW SUN + VISIBLE; CR1 row: SUNLIT + BELOW HORIZON.
+    const rows = within(dialog).getAllByRole('row');
+    expect(rows.length).toBeGreaterThanOrEqual(5); // header + 4 sites
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close site comparison' }));
+    expect(screen.queryByRole('dialog', { name: 'Compare sites' })).toBeNull();
   });
 
-  it('API down: the verdict line falls back to the bundled PSI data', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
+  it('window finder modal shows the longest SUNLIT stretch for Malapert from Nov 14', async () => {
     render(<App />);
-    expect(await screen.findByText(/on-device data/)).toBeTruthy();
-    // Same numbers as ever — the fallback is the bundled data.
-    expect(screen.getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open landing window finder' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Landing window finder' });
+    expect(within(dialog).getByText(/Landing windows — Malapert Massif/)).toBeTruthy();
+    expect(within(dialog).getByText(/Longest continuous SUNLIT stretch:/)).toBeTruthy();
+    expect(within(dialog).getByText(/Longest continuous Earth-VISIBLE stretch:/)).toBeTruthy();
+    expect(within(dialog).getByText(/Best days — ranked by Sun-lit hours/)).toBeTruthy();
+    // 30-day toggle exists.
+    expect(within(dialog).getByRole('button', { name: '30 days' })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close landing window finder' }));
+    expect(screen.queryByRole('dialog', { name: 'Landing window finder' })).toBeNull();
   });
 
-  it('mission brief button opens a printable brief with the ranking + citations', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
+  it('mission brief modal ranks all 13 sites for the chosen date', async () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Open mission brief' }));
     const dialog = await screen.findByRole('dialog', { name: 'Mission brief' });
-    expect(within(dialog).getByText(/Mission brief — Exploration/)).toBeTruthy();
-    // Exploration ranking: SIBAL is GAP 11.9, nearest test PSI-99 Sample 2-5, DOI cited.
-    expect(within(dialog).getByText('PSI-99 · Sample 2-5 · DOI 10.60555/2chp-m469')).toBeTruthy();
-    // Citations section lists the investigations; reports list BASS-II.
-    expect(within(dialog).getByText(/PSI-25 · Burning and Suppression of Solids - II/)).toBeTruthy();
-    expect(within(dialog).getByText(/BASS-II — NASA-TM-202110011385/)).toBeTruthy();
-    expect(within(dialog).getByText(/Coverage, not certification/)).toBeTruthy();
+    expect(within(dialog).getByText(/Mission brief — all 13 sites, 2026-11-14 12:00 UTC/)).toBeTruthy();
+    for (const name of ['Malapert Massif', 'Slater Plain', 'Connecting Ridge CR1', 'de Gerlache Rim 2']) {
+      expect(within(dialog).getByText(name)).toBeTruthy();
+    }
+    expect(within(dialog).getByText(/88\.1% illuminated over 20 years/)).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Print mission brief' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close mission brief' }));
     expect(screen.queryByRole('dialog', { name: 'Mission brief' })).toBeNull();
   });
 
-  it('evidence button opens the scatter + the exact PSI-99 row with its DOI (API down, bundled data)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
+  it('evidence modal shows the method, the R1–R8 reference table and the sources', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Exploration · 34% O₂/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
     const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
-    expect(within(dialog).getByText(/Evidence — SIBAL fabric · Exploration 34% O₂ @ 8\.2 psi/)).toBeTruthy();
-    expect(within(dialog).getByText(/GAP 11\.9 O₂ pts/)).toBeTruthy();
-    // The scatter renders (997 plotted) with the gap line to PSI-99.
-    expect(within(dialog).getByText(/997 PSI test rows plotted/)).toBeTruthy();
-    expect(within(dialog).getByText(/11 Flame Design inverse rows/)).toBeTruthy();
-    // The exact row behind the verdict, with its DOI as a link — in
-    // the row card AND in the citations list (both must link out).
-    expect(within(dialog).getByText(/Nearest O₂ test — PSI-99 · Sample 2-5/)).toBeTruthy();
-    const doiLinks = within(dialog).getAllByRole('link', { name: '10.60555/2chp-m469' });
-    expect(doiLinks.length).toBe(2);
-    for (const l of doiLinks) expect(l.getAttribute('href')).toBe('https://doi.org/10.60555/2chp-m469');
-    // Solids record no pressure — said plainly, never assumed.
-    expect(within(dialog).getByText(/No pressure row recorded in PSI for this material/)).toBeTruthy();
-    // Citations + disclaimer + bundled-data source line.
-    expect(within(dialog).getByText(/PSI-99 · Spacecraft Fire Experiment-II/)).toBeTruthy();
-    expect(within(dialog).getByText(/Coverage, not certification/)).toBeTruthy();
-    expect(within(dialog).getByText(/Served from the bundled PSI data/)).toBeTruthy();
+    expect(within(dialog).getByText(/Evidence — Malapert Massif · 2026-11-14 12:00 UTC/)).toBeTruthy();
+    expect(within(dialog).getAllByText(/astronomy-engine v2\.1\.19/).length).toBeGreaterThanOrEqual(2);
+    expect(within(dialog).getByText(/13-term nutation series/)).toBeTruthy();
+    expect(within(dialog).getByText(/Moon illumination, full Moon 2026-11-24 14:53 UTC/)).toBeTruthy();
+    expect(within(dialog).getByText(/Connecting Ridge CR1, 2026-11-14 12:00 UTC/)).toBeTruthy();
+    expect(within(dialog).getAllByText(/NAIF PCK pck00010\.tpc/).length).toBeGreaterThanOrEqual(2);
+    expect(within(dialog).getByText(/Planning aid only, not for flight decisions\./)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close evidence' }));
     expect(screen.queryByRole('dialog', { name: 'Evidence' })).toBeNull();
   });
 
-  it('evidence button opens the Methanol pressure-gap row at 10.18 psi', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
-    render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Exploration · 34% O₂/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Methanol droplet/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
-    expect(within(dialog).getByText(/GAP 1\.98 psi/)).toBeTruthy();
-    expect(within(dialog).getByText(/Nearest pressure test — PSI-69 · FLEX test 121 \(C12M101\)/)).toBeTruthy();
-    expect(within(dialog).getByText(/10\.18–10\.18 psi/)).toBeTruthy();
-  });
-
-  it('evidence title shows the custom cabin values, not the nearest preset', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
-    render(<App />);
-    fireEvent.change(screen.getByLabelText('Oxygen percent'), { target: { value: '24.5' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
-    expect(within(dialog).getByText(/Evidence — SIBAL fabric · Custom 24\.5% O₂ @ 8\.2 psi/)).toBeTruthy();
-    // The title is the custom cabin — not the nearest preset (Orion).
-    // (The scatter itself still labels Orion as a marker — that is data,
-    // not the title — so scope the check to the title heading.)
-    expect(within(dialog).getByRole('heading', { name: /Evidence —/ }).textContent).not.toMatch(/Orion/);
-  });
-
   it('Esc closes the Evidence modal', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
     await screen.findByRole('dialog', { name: 'Evidence' });
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Evidence' })).toBeNull();
-  });
-
-  it('all-materials toggle reveals Wax candle; picking it shows its 16.6-pt gap', () => {
-    render(<App />);
-    expect(screen.queryByRole('button', { name: /Wax candle/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /All 34 materials/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Wax candle/ }));
-    expect(screen.getByText(/Wax candle · Exploration 34%/)).toBeTruthy();
-    expect(screen.getByText(/GAP 16\.6 O₂ pts/)).toBeTruthy();
-  });
-
-  it('live API: the Evidence modal renders the /api/evidence pack, not the bundled one', async () => {
-    const apiEvidence = {
-      verdict: {
-        material: 'SIBAL fabric', atmosphere: 'ISS', kind: 'GAP_O2',
-        overall: 'GAP (O2)', o2_nearest: 22.1, o2_distance_pts: 11.9,
-        o2_nearest_row: ['PSI-99', 'Sample 2-5'], o2_verdict: 'GAP',
-        pressure_verdict: 'NOT RECORDED',
-      },
-      line: 'MARKER-LIVE-EVIDENCE-PACK',
-      nearest_o2_row: {
-        investigation: 'Spacecraft Fire Experiment-II', accession: 'PSI-99',
-        doi: '10.60555/2chp-m469', table_file: 'PSI-99_Experimental table_SAFFIRE-2.csv',
-        row_ref: 'Sample 2-5', row_kind: 'per-test', material_canonical: 'SIBAL fabric',
-        material_raw: 'Cotton-Fiberglass (SIBAL)', material_class: 'solid',
-        o2_pct_min: 22.1, o2_pct_max: 22.1, o2_approx: true,
-        pressure_psi_min: null, pressure_psi_max: null, flow_cm_s: 20,
-        outcome: null, burn_time_s: 145, notes: 'MARKER-ROW',
-      },
-      nearest_pressure_row: null,
-      citations: [{ accession: 'PSI-99', title: 'Spacecraft Fire Experiment-II', doi: '10.60555/2chp-m469', url: 'https://doi.org/10.60555/2chp-m469' }],
-      reports: [], disclaimer: 'Coverage, not certification.',
-      snapshot: { rows: 2012, investigations: 19, cleaned_at: '2026-11-11' },
-    };
-    const fetchMock = vi.fn(async (url) => {
-      const u = String(url);
-      if (u.includes('/api/evidence')) return { ok: true, json: async () => apiEvidence };
-      if (u.includes('/api/verdict')) return { ok: true, json: async () => apiEvidence.verdict };
-      if (u.includes('/api/materials')) return { ok: true, json: async () => ({ materials: [] }) };
-      if (u.includes('/api/scatter')) return { ok: true, json: async () => ({ points: [] }) };
-      if (u.includes('/api/ranking')) return { ok: true, json: async () => ({ cabin: [], gases: [] }) };
-      return { ok: false, json: async () => ({}) };
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<App />);
-    expect(await screen.findByText(/live API/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
-    // The modal shows the API pack's marker line + marker row note —
-    // proof the data came from /api/evidence, not the bundled builder.
-    expect(within(dialog).getByText('MARKER-LIVE-EVIDENCE-PACK')).toBeTruthy();
-    expect(within(dialog).getByText('MARKER-ROW')).toBeTruthy();
-    expect(within(dialog).getByText(/Served live by the verdict-engine API/)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/evidence?material=SIBAL'), expect.anything());
-  });
-
-  it('evidence modal shows the coverage block: ranges, counts, confidence (API down, bundled data)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
-    render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Exploration · 34% O₂/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
-    expect(within(dialog).getByText(/Coverage — SIBAL fabric/)).toBeTruthy();
-    expect(within(dialog).getByText(/O₂ tested 16\.4–22\.1% across 17 levels \(30 rows\)/)).toBeTruthy();
-    expect(within(dialog).getByText(/pressure never recorded/)).toBeTruthy();
-    expect(within(dialog).getByText(/44 PSI rows for this material/)).toBeTruthy();
-    expect(within(dialog).getByText(/Confidence 0\.65 — Nearest test is 11\.9 O2 pts from the 34% target/)).toBeTruthy();
-    expect(within(dialog).getByText(/TESTED = 1\.00/)).toBeTruthy();
-  });
-
-  it('mission planner: all five headline materials at ISS, then uncheck Nomex and rebuild', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no server'); }));
-    render(<App />);
-    // The planner uses the atmosphere the panel is currently on — switch
-    // to ISS first so the plan is the ISS one this test asserts.
-    fireEvent.click(screen.getByRole('button', { name: /ISS · 21% O₂/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open mission planner' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Mission planner' });
-    // Default atmosphere is ISS: Methanol + Heptane TESTED, the three
-    // solids PARTIAL (O2 covered, pressure never recorded).
-    expect(await within(dialog).findByText(/2 of 5 materials TESTED at ISS 21% O₂ @ 14\.7 psi/)).toBeTruthy();
-    expect(within(dialog).getByText(/3 partial — SIBAL fabric, Nomex, PMMA/)).toBeTruthy();
-    expect(within(dialog).getByText(/Methanol droplet — TESTED/)).toBeTruthy();
-    expect(within(dialog).getByText(/SIBAL fabric — PARTIAL — O2 covered/)).toBeTruthy();
-    // Uncheck Nomex and rebuild: 4 materials, 2 tested, 2 partial.
-    fireEvent.click(within(dialog).getByLabelText('Plan Nomex'));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Build plan' }));
-    expect(await within(dialog).findByText(/2 of 4 materials TESTED at ISS 21% O₂ @ 14\.7 psi/)).toBeTruthy();
-    expect(within(dialog).getByText(/2 partial — SIBAL fabric, PMMA/)).toBeTruthy();
-    expect(within(dialog).queryByText(/Nomex — PARTIAL/)).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close planner' }));
-    expect(screen.queryByRole('dialog', { name: 'Mission planner' })).toBeNull();
   });
 });
