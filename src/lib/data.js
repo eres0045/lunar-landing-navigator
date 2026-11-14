@@ -191,6 +191,9 @@ export const PUBLISHED_ILLUMINATION = [
   },
 ];
 
+export const TERRAIN_NOTE =
+  'Drive mode runs on the real LRO LOLA elevation model: one 1200 m × 1200 m grid per site, sampled from LDEM_85S_10M (10 m/px, 10 sites) or LDEM_80S_20M (20 m/px: Cabeus, Mons Mouton Plateau, Nobile Rim 2), LRO-L-LOLA-4-GDR-V1.0, NASA public domain. Heights are metres above the 1737.4 km reference sphere, shown relative to the landing point (landing point = 0 m); the rover follows them by bilinear interpolation, and the ground mesh is displaced from the same grid with elevation-tint + slope shading computed from the real heights — no imagery texture (none was obtainable: no LROC texture could be fetched, so nothing fake is substituted). Limits: 10–20 m resolution — no sub-10 m boulders or small craters are resolved, the scattered drive-scene rocks are decorative with no collision, and Sun/Earth verdicts still use the flat-horizon model (no terrain shadowing). Full provenance, per-site relief and verification: public/terrain/PROVENANCE.md.';
+
 /** Sources behind the app (SOURCES.md §A5 + §B + §C). */
 export const SOURCES = [
   { label: 'NASA — Artemis III landing regions update (Oct 28, 2024): the 9 current regions', url: 'https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/' },
@@ -202,6 +205,8 @@ export const SOURCES = [
   { label: 'NAIF PCK pck00010.tpc — IAU lunar pole / rotation / nutation constants', url: 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc' },
   { label: 'astronomy-engine v2.1.19 (MIT) — geocentric ephemeris', url: 'https://github.com/cosinekitty/astronomy#readme' },
   { label: 'IAU WGCCRE 2009 report — lunar rotation model (claimed accurate to 0.1°)', url: 'https://pubs.usgs.gov/publication/70157540' },
+  { label: 'LRO LOLA GDR LDEM_85S_10M (10 m/px, lat −85°…−90°) — Drive terrain for 10 sites', url: 'https://imbrium.mit.edu/DATA/LOLA_GDR/POLAR/IMG/LDEM_85S_10M.IMG' },
+  { label: 'LRO LOLA GDR LDEM_80S_20M (20 m/px, lat −80°…−90°) — Drive terrain for Cabeus, Mons Mouton Plateau, Nobile Rim 2', url: 'https://imbrium.mit.edu/DATA/LOLA_GDR/POLAR/IMG/LDEM_80S_20M.IMG' },
   { label: 'NASA LRO Data Products — mission data hub', url: 'https://science.nasa.gov/mission/lro/data-products/' },
   { label: 'NASA Lunar Surface Data Book (ACD-50044 Rev A, May 2023) — LOLA illumination analysis', url: 'https://ntrs.nasa.gov/api/citations/20230007818/downloads/ACD-50044%20Lunar%20Surface%20Data%20Book%20Rev%20A.pdf' },
   { label: 'Challenge statement: “Lunar Landing Site Navigator” (CLPS Lunar Mission Browser, CH-04), NASA Space Apps 2026', url: 'https://edeon.sonoma.edu/nasaspaceapps-26/' },

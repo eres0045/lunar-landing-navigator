@@ -1,0 +1,626 @@
+{
+ "cabeus": {
+  "siteName": "Peak Near Cabeus B",
+  "centerLat": -83.661,
+  "centerLon": -69.014,
+  "source": "LDEM_80S_20M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -83.661,
+    "lon": -69.014,
+    "heightM": 4265.3
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -83.644511,
+    "lon": -69.014,
+    "heightM": 4342.2
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -83.661,
+    "lon": -68.864658,
+    "heightM": 4331.3
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -83.677489,
+    "lon": -69.014,
+    "heightM": 4174.3
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -83.661,
+    "lon": -69.163342,
+    "heightM": 4209.5
+   }
+  ]
+ },
+ "haworth": {
+  "siteName": "Haworth",
+  "centerLat": -86.753,
+  "centerLon": -22.836,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -86.753,
+    "lon": -22.836,
+    "heightM": 1635.5
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -86.736511,
+    "lon": -22.836,
+    "heightM": 1609.9
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -86.753,
+    "lon": -22.544884,
+    "heightM": 1576.4
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -86.769489,
+    "lon": -22.836,
+    "heightM": 1620.4
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -86.753,
+    "lon": -23.127116,
+    "heightM": 1650.6
+   }
+  ]
+ },
+ "malapert": {
+  "siteName": "Malapert Massif",
+  "centerLat": -85.99,
+  "centerLon": -0.125,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -85.99,
+    "lon": -0.125,
+    "heightM": 4807.6
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -85.973511,
+    "lon": -0.125,
+    "heightM": 4825.3
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -85.99,
+    "lon": 0.11079,
+    "heightM": 4840.9
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -86.006489,
+    "lon": -0.125,
+    "heightM": 4743.1
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -85.99,
+    "lon": -0.36079,
+    "heightM": 4793.4
+   }
+  ]
+ },
+ "mouton-plateau": {
+  "siteName": "Mons Mouton Plateau",
+  "centerLat": -84.232,
+  "centerLon": 29.926,
+  "source": "LDEM_80S_20M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -84.232,
+    "lon": 29.926,
+    "heightM": 5076.3
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -84.215511,
+    "lon": 29.926,
+    "heightM": 4979.4
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -84.232,
+    "lon": 30.090068,
+    "heightM": 4972.6
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -84.248489,
+    "lon": 29.926,
+    "heightM": 5208.1
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -84.232,
+    "lon": 29.761932,
+    "heightM": 5161.0
+   }
+  ]
+ },
+ "mouton": {
+  "siteName": "Mons Mouton",
+  "centerLat": -85.423,
+  "centerLon": 31.586,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -85.423,
+    "lon": 31.586,
+    "heightM": 6398.4
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -85.406511,
+    "lon": 31.586,
+    "heightM": 6438.0
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -85.423,
+    "lon": 31.792632,
+    "heightM": 6417.6
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -85.439489,
+    "lon": 31.586,
+    "heightM": 6347.3
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -85.423,
+    "lon": 31.379368,
+    "heightM": 6270.8
+   }
+  ]
+ },
+ "nobile1": {
+  "siteName": "Nobile Rim 1",
+  "centerLat": -85.431,
+  "centerLon": 37.241,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -85.431,
+    "lon": 37.241,
+    "heightM": 5956.1
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -85.414511,
+    "lon": 37.241,
+    "heightM": 5909.2
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -85.431,
+    "lon": 37.447993,
+    "heightM": 5862.4
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -85.447489,
+    "lon": 37.241,
+    "heightM": 6020.4
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -85.431,
+    "lon": 37.034007,
+    "heightM": 6005.8
+   }
+  ]
+ },
+ "nobile2": {
+  "siteName": "Nobile Rim 2",
+  "centerLat": -83.963,
+  "centerLon": 58.654,
+  "source": "LDEM_80S_20M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -83.963,
+    "lon": 58.654,
+    "heightM": 972.1
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -83.946511,
+    "lon": 58.654,
+    "heightM": 964.4
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -83.963,
+    "lon": 58.810783,
+    "heightM": 1011.3
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -83.979489,
+    "lon": 58.654,
+    "heightM": 1019.1
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -83.963,
+    "lon": 58.497217,
+    "heightM": 961.7
+   }
+  ]
+ },
+ "gerlache2": {
+  "siteName": "de Gerlache Rim 2",
+  "centerLat": -88.225,
+  "centerLon": -65.421,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -88.225,
+    "lon": -65.421,
+    "heightM": -60.8
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -88.208511,
+    "lon": -65.421,
+    "heightM": -148.8
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -88.225,
+    "lon": -64.888663,
+    "heightM": -106.1
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -88.241489,
+    "lon": -65.421,
+    "heightM": 8.9
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -88.225,
+    "lon": -65.953337,
+    "heightM": -25.6
+   }
+  ]
+ },
+ "slater": {
+  "siteName": "Slater Plain",
+  "centerLat": -87.149,
+  "centerLon": 126.134,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -87.149,
+    "lon": 126.134,
+    "heightM": 21.9
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -87.132511,
+    "lon": 126.134,
+    "heightM": 80.6
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -87.149,
+    "lon": 126.465511,
+    "heightM": 67.8
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -87.165489,
+    "lon": 126.134,
+    "heightM": 8.5
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -87.149,
+    "lon": 125.802489,
+    "heightM": -19.8
+   }
+  ]
+ },
+ "connecting-ridge": {
+  "siteName": "Connecting Ridge CR1",
+  "centerLat": -89.4395,
+  "centerLon": -137.1934,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -89.4395,
+    "lon": -137.1934,
+    "heightM": 1958.6
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -89.423011,
+    "lon": -137.1934,
+    "heightM": 1930.5
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -89.4395,
+    "lon": -135.50783,
+    "heightM": 1906.3
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -89.455989,
+    "lon": -137.1934,
+    "heightM": 1953.4
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -89.4395,
+    "lon": -138.87897,
+    "heightM": 1918.1
+   }
+  ]
+ },
+ "shoemaker": {
+  "siteName": "Shoemaker PSR",
+  "centerLat": -88.0517,
+  "centerLon": 45.488,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -88.0517,
+    "lon": 45.488,
+    "heightM": -3936.4
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -88.035211,
+    "lon": 45.488,
+    "heightM": -3935.3
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -88.0517,
+    "lon": 45.973002,
+    "heightM": -3956.5
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -88.068189,
+    "lon": 45.488,
+    "heightM": -3936.3
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -88.0517,
+    "lon": 45.002998,
+    "heightM": -3939.6
+   }
+  ]
+ },
+ "sverdrup": {
+  "siteName": "Sverdrup PSR",
+  "centerLat": -88.2432,
+  "centerLon": -143.9156,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -88.2432,
+    "lon": -143.9156,
+    "heightM": -2880.5
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -88.226711,
+    "lon": -143.9156,
+    "heightM": -2876.1
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -88.2432,
+    "lon": -143.37775,
+    "heightM": -2901.1
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -88.259689,
+    "lon": -143.9156,
+    "heightM": -2930.6
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -88.2432,
+    "lon": -144.45345,
+    "heightM": -2897.8
+   }
+  ]
+ },
+ "faustini": {
+  "siteName": "Faustini Rim A PSR",
+  "centerLat": -87.146,
+  "centerLon": 84.075,
+  "source": "LDEM_85S_10M",
+  "points": [
+   {
+    "point": "center",
+    "northM": 0,
+    "eastM": 0,
+    "lat": -87.146,
+    "lon": 84.075,
+    "heightM": -2726.7
+   },
+   {
+    "point": "N500",
+    "northM": 500,
+    "eastM": 0,
+    "lat": -87.129511,
+    "lon": 84.075,
+    "heightM": -2706.5
+   },
+   {
+    "point": "E500",
+    "northM": 0,
+    "eastM": 500,
+    "lat": -87.146,
+    "lon": 84.406162,
+    "heightM": -2712.2
+   },
+   {
+    "point": "S500",
+    "northM": -500,
+    "eastM": 0,
+    "lat": -87.162489,
+    "lon": 84.075,
+    "heightM": -2714.4
+   },
+   {
+    "point": "W500",
+    "northM": 0,
+    "eastM": -500,
+    "lat": -87.146,
+    "lon": 83.743838,
+    "heightM": -2706.5
+   }
+  ]
+ }
+}

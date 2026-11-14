@@ -11,10 +11,14 @@
  * at the selected site and date — move the date and the lighting moves.
  *
  * Honesty notes: the Moon texture is illustrative (its crater features
- * are not registered to the marker grid); the terrain is a smooth sphere,
- * not a DEM — there is no terrain shadowing in this app, by design (see
- * the flat-horizon caveat in the panel). The LRO model is NASA public
- * domain; it orbits as a prop and is skipped silently if it fails to load.
+ * are not registered to the marker grid). Drive-mode terrain is the REAL
+ * LRO LOLA DEM (10–20 m/px, per-site grid in public/terrain/) — the
+ * ground mesh is displaced from it and the rover follows it via
+ * `surfaceHeightAt`; shading is elevation tint + slope shading computed
+ * from the real heights only (no fake texture — none was obtainable).
+ * No sub-10 m boulders/craters are resolved; the scattered rocks are
+ * decorative (no collision). The LRO model is NASA public domain; it
+ * orbits as a prop and is skipped silently if it fails to load.
  *
  * Camera: drag to orbit, wheel to zoom, presets fly to a framing.
  * jsdom has no WebGL, so the component renders a fallback message there.
@@ -24,7 +28,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sunEarthAt } from '../lib/ephemeris.js';
 import { SITES } from '../lib/data.js';
-import { createRover, step as roverStep, roverLatLon } from '../lib/rover.js';
+import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
+import { loadTerrainGrid, createTerrainLookup } from '../lib/terrain.js';
+import { buildTerrainGeometry, terrainRingPoints } from './terrainMesh.js';
 import { createRoverGroup } from './RoverModel.jsx';
 
 const D2R = Math.PI / 180;
@@ -92,12 +98,14 @@ const POWER_COLOR = { SUNLIT: 0x34d399, 'LOW SUN': 0xfbbf24, DARK: 0x94a3b8 };
 export default function LunarScene({
   date, site, verdicts, cameraCmd, onSelectSite,
   driveMode = false, driveCam = 'chase', driveInputRef, roverStateRef, maxSpeedKmh = 13,
+  terrainShading = true, onTerrainStatus,
 }) {
   const mountRef = useRef(null);
   const [webglOk, setWebglOk] = useState(false);
   const stateRef = useRef(null);
-  const propsRef = useRef({ date, site, verdicts, driveMode, driveCam });
-  propsRef.current = { date, site, verdicts, driveMode, driveCam };
+  const driveApiRef = useRef(null);
+  const propsRef = useRef({ date, site, verdicts, driveMode, driveCam, terrainShading });
+  propsRef.current = { date, site, verdicts, driveMode, driveCam, terrainShading };
 
   // (Re)create the rover when Drive mode is entered or the site
   // changes under it; a max-speed change only retunes the cap.
@@ -111,6 +119,43 @@ export default function LunarScene({
       cur.maxSpeedKmh = maxSpeedKmh;
     }
   }, [driveMode, site, maxSpeedKmh, roverStateRef]);
+
+  // Terrain: lazy-load this site's real LOLA DEM grid, plug it into the
+  // rover physics (setSurfaceHeightAt) and rebuild the Drive ground
+  // mesh from it. On failure the scene stays on the flat disc and the
+  // rover on the smooth sphere — the app keeps working, and the HUD
+  // says so (status reported via onTerrainStatus).
+  useEffect(() => {
+    let cancelled = false;
+    const base = import.meta.env.BASE_URL || '/';
+    onTerrainStatus?.({ siteId: site.id, state: 'loading' });
+    loadTerrainGrid(site.id, base)
+      .then((grid) => {
+        if (cancelled) return;
+        const lookup = createTerrainLookup(grid);
+        setSurfaceHeightAt(lookup.heightFn);
+        driveApiRef.current?.applyTerrain(grid, lookup);
+        onTerrainStatus?.({
+          siteId: site.id, state: 'loaded',
+          resolutionM: grid.resolutionM, source: grid.source,
+          reliefM: grid.maxHeightM - grid.minHeightM,
+          centerHeightM: grid.centerHeightM,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        resetSurfaceHeightAt();
+        driveApiRef.current?.clearTerrain();
+        onTerrainStatus?.({ siteId: site.id, state: 'error' });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site]);
+
+  // DEM shading toggle (elevation tint + slope shading on/off).
+  useEffect(() => {
+    driveApiRef.current?.setShading(terrainShading);
+  }, [terrainShading]);
 
   // Camera commands from the panel (zoom + presets), applied once each.
   useEffect(() => {
@@ -268,8 +313,9 @@ export default function LunarScene({
     // The global scene is unit-sphere scale (1 m ≈ 5.8e-7 units), so
     // float32 precision breaks if the rover moves in world units.
     // Drive mode therefore HIDES the Moon sphere/markers/LRO and
-    // renders a tangent-plane frame centred on the site: a ~500 m
-    // ground disc, the code-built rover at the origin, Sun/Earth
+    // renders a tangent-plane frame centred on the site: the real LOLA
+    // DEM heightfield (1200 m square; flat 500 m disc until it loads),
+    // the code-built rover at the origin, Sun/Earth
     // placed by alt/az DIRECTION from the site (same ephemeris,
     // distances in metres). The rover moves in metres in this frame.
     const driveGroup = new THREE.Group();
@@ -278,43 +324,92 @@ export default function LunarScene({
     // Dim fill so the rover stays readable when the Sun sits below
     // the horizon (common at the poles) — it does not fake a Sun.
     driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x1a1a22, 0.55));
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(500, 64),
-      new THREE.MeshStandardMaterial({ color: 0x8f8d88, roughness: 1, metalness: 0 }),
-    );
+    // Drive ground: a flat 500 m disc until this site's real LOLA DEM
+    // loads (applyTerrain swaps in the displaced 1200 m heightfield —
+    // one vertex per grid node, same heights the rover drives on).
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x8f8d88, roughness: 1, metalness: 0 });
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(500, 64), groundMat);
     ground.rotation.x = -Math.PI / 2;
     driveGroup.add(ground);
-    // Distance rings (50 / 100 / 200 m) so motion is judgeable.
-    for (const r of [50, 100, 200]) {
-      const ringGeo = new THREE.RingGeometry(r - 0.3, r + 0.3, 64);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x6b7280, side: THREE.DoubleSide });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.rotation.x = -Math.PI / 2;
-      ringMesh.position.y = 0.02;
-      driveGroup.add(ringMesh);
-    }
+    // Distance rings (50 / 100 / 200 m) so motion is judgeable — drawn
+    // as terrain-following line loops so they are never buried by the
+    // DEM relief (a flat ring would sink under a 130 m rise).
+    const ringLines = [];
+    const makeRingLine = (radius, color, lift) => {
+      const geo = new THREE.BufferGeometry().setFromPoints(terrainRingPoints(null, radius, 128, lift));
+      const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color }));
+      driveGroup.add(line);
+      ringLines.push({ line, radius, lift });
+      return line;
+    };
+    for (const r of [50, 100, 200]) makeRingLine(r, 0x6b7280, 0.25);
     // Landing-point ring at the origin (the rover starts here).
-    const homeRing = new THREE.Mesh(
-      new THREE.RingGeometry(1.4, 1.7, 32),
-      new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide }),
-    );
-    homeRing.rotation.x = -Math.PI / 2;
-    homeRing.position.y = 0.03;
-    driveGroup.add(homeRing);
-    // Scattered rocks (deterministic) for motion reference.
+    makeRingLine(1.4, 0x34d399, 0.3);
+    makeRingLine(1.7, 0x34d399, 0.3);
+    // Scattered rocks (deterministic) for motion reference; their y is
+    // re-seated on the DEM when terrain loads (still decorative — no
+    // collision, labelled as such in the HUD).
     const rockRand = mulberry32(20261114);
     const rockGeo = new THREE.DodecahedronGeometry(1, 0);
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x6e6c68, roughness: 1, metalness: 0 });
+    const rockSpecs = [];
     for (let i = 0; i < 140; i++) {
       const rock = new THREE.Mesh(rockGeo, rockMat);
       const a = rockRand() * Math.PI * 2;
       const d = 8 + rockRand() * 240;
       const s = 0.2 + rockRand() * 1.3;
+      const east = Math.cos(a) * d;
+      const north = Math.sin(a) * d;
       rock.scale.setScalar(s);
-      rock.position.set(Math.cos(a) * d, s * 0.25, Math.sin(a) * d);
+      rock.position.set(east, s * 0.25, north);
       rock.rotation.set(rockRand() * 3, rockRand() * 3, rockRand() * 3);
       driveGroup.add(rock);
+      rockSpecs.push({ mesh: rock, north, east, s });
     }
+    // Drive-scene API for the terrain effect above: swap the ground
+    // mesh, re-seat rings + rocks on the DEM, toggle DEM shading.
+    let terrainActive = false;
+    const updateRingLines = (lookup) => {
+      for (const { line, radius, lift } of ringLines) {
+        line.geometry.dispose();
+        line.geometry = new THREE.BufferGeometry().setFromPoints(
+          terrainRingPoints(lookup, radius, 128, lift),
+        );
+      }
+    };
+    const seatRocks = (lookup) => {
+      for (const { mesh, north, east, s } of rockSpecs) {
+        mesh.position.y = (lookup ? lookup.relativeHeightAtLocal(north, east) : 0) + s * 0.25;
+      }
+    };
+    driveApiRef.current = {
+      applyTerrain(grid, lookup) {
+        terrainActive = true;
+        ground.geometry.dispose();
+        ground.geometry = buildTerrainGeometry(grid);
+        ground.rotation.x = 0; // heightfield is already in (east, up, north)
+        this.setShading(propsRef.current.terrainShading);
+        updateRingLines(lookup);
+        seatRocks(lookup);
+      },
+      clearTerrain() {
+        terrainActive = false;
+        ground.geometry.dispose();
+        ground.geometry = new THREE.CircleGeometry(500, 64);
+        ground.rotation.x = -Math.PI / 2;
+        this.setShading(false);
+        updateRingLines(null);
+        seatRocks(null);
+      },
+      setShading(on) {
+        // Shading = vertex colours from the real DEM (elevation tint +
+        // slope shading). Off = the old uniform lunar grey. Only
+        // applies while the DEM mesh is active.
+        groundMat.vertexColors = terrainActive && on;
+        groundMat.color.set(terrainActive && on ? 0xffffff : 0x8f8d88);
+        groundMat.needsUpdate = true;
+      },
+    };
     // Code-built rover (see RoverModel.jsx for the GLB swap-in hook).
     const roverParts = createRoverGroup();
     driveGroup.add(roverParts.group);
@@ -520,6 +615,7 @@ export default function LunarScene({
       el.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', updateCameraAspect);
       stateRef.current = null;
+      driveApiRef.current = null;
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };

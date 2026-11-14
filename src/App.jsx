@@ -17,7 +17,7 @@ import {
   SITES, TYPE_LABEL, getSite, fmt, fmtSigned, siteVerdict,
   compareSites, rankSites, findWindows, SOURCES, METHOD,
   REFERENCE_VALUES, PUBLISHED_ILLUMINATION, DISCLAIMER,
-  POWER_RULE, COMM_RULE, powerVerdict, commVerdict,
+  POWER_RULE, COMM_RULE, powerVerdict, commVerdict, TERRAIN_NOTE,
 } from './lib/data.js';
 import {
   LRV, createRover, roverVerdict, headingDeg,
@@ -107,6 +107,15 @@ export default function App() {
   const [driveMode, setDriveMode] = useState(false);
   const [driveCam, setDriveCam] = useState('chase');
   const [maxSpeedKmh, setMaxSpeedKmh] = useState(LRV.topSpeedKmh);
+  // Real LOLA DEM terrain for the selected site (loaded lazily by
+  // LunarScene); the HUD reports which terrain is under the rover.
+  const [terrainStatus, setTerrainStatus] = useState({ siteId: site.id, state: 'loading' });
+  const [terrainShading, setTerrainShading] = useState(true);
+  const terrainLine = terrainStatus.state === 'loaded'
+    ? `Terrain: real LRO LOLA DEM, ${terrainStatus.resolutionM} m/px · relief ${Math.round(terrainStatus.reliefM)} m over the 1.2 km square`
+    : terrainStatus.state === 'loading'
+      ? 'Terrain: loading real LOLA DEM…'
+      : 'Terrain: flat — DEM unavailable (smooth-sphere fallback)';
   const driveInputRef = useRef({ throttle: 0, reverse: 0, steer: 0, brake: false });
   const roverStateRef = useRef(null);
   const [hud, setHud] = useState(null);
@@ -126,6 +135,7 @@ export default function App() {
       const r = roverStateRef.current;
       if (!r) {
         setHud({ lat: site.lat, lon: site.lon, speedMs: 0, heading: 0, distanceM: 0,
+          heightM: 0, pitchDeg: 0, rollDeg: 0,
           sunAlt: verdict.sun.alt, earthAlt: verdict.earth.alt,
           power: verdict.power, comm: verdict.comm });
         return;
@@ -134,6 +144,8 @@ export default function App() {
       setHud({
         lat: v.lat, lon: v.lon, speedMs: r.speedMs, heading: headingDeg(r),
         distanceM: distanceFromStart(r.northM, r.eastM),
+        heightM: r.heightM, pitchDeg: (r.pitchRad * 180) / Math.PI,
+        rollDeg: (r.rollRad * 180) / Math.PI,
         sunAlt: v.sun.alt, earthAlt: v.earth.alt, power: v.power, comm: v.comm,
       });
     };
@@ -227,6 +239,8 @@ export default function App() {
           driveInputRef={driveInputRef}
           roverStateRef={roverStateRef}
           maxSpeedKmh={maxSpeedKmh}
+          terrainShading={terrainShading}
+          onTerrainStatus={setTerrainStatus}
         />
       </div>
 
@@ -244,7 +258,7 @@ export default function App() {
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
             Code-built rover modelled on the Apollo LRV — not the flight vehicle.
-            Terrain is a smooth sphere; physics is a kinematic approximation.
+            Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
           </p>
           <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
             <p>Speed: <span data-testid="drive-speed" className="font-bold tabular-nums">{fmt(speedKmh({ speedMs: hud.speedMs }), 1)} km/h</span>
@@ -253,6 +267,9 @@ export default function App() {
             <p>Position: <span data-testid="drive-lat" className="font-bold tabular-nums">{fmt(hud.lat, 4)}°</span>
               {' '}<span data-testid="drive-lon" className="font-bold tabular-nums">{fmt(hud.lon, 4)}°</span></p>
             <p>Distance from landing point: <span data-testid="drive-distance" className="font-bold tabular-nums">{fmt(hud.distanceM, 1)} m</span></p>
+            <p>Elevation vs landing point: <span data-testid="drive-height" className="font-bold tabular-nums">{fmt(hud.heightM, 1)} m</span></p>
+            <p>Pitch / roll: <span data-testid="drive-pitch" className="font-bold tabular-nums">{fmt(hud.pitchDeg, 1)}°</span>{' / '}
+              <span data-testid="drive-roll" className="font-bold tabular-nums">{fmt(hud.rollDeg, 1)}°</span></p>
             <p>☀️ Sun: <span data-testid="drive-sun-alt" className="font-bold tabular-nums">{fmtSigned(hud.sunAlt)}</span>{' '}
               <span data-testid="drive-power" className="font-bold" style={{ color: hud.power.color }}>{hud.power.label}</span></p>
             <p>🌍 Earth: <span data-testid="drive-earth-alt" className="font-bold tabular-nums">{fmtSigned(hud.earthAlt)}</span>{' '}
@@ -273,6 +290,13 @@ export default function App() {
               className="flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-2 py-1.5 text-xs font-semibold text-slate-200">
               📷 {driveCam === 'chase' ? 'Chase cam → Driver cam' : 'Driver cam → Chase cam'}
             </button>
+            <button type="button" onClick={() => setTerrainShading((v) => !v)}
+              aria-label="Toggle DEM terrain shading" data-testid="drive-terrain-shading"
+              className="flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-2 py-1.5 text-xs font-semibold text-slate-200">
+              ⛰️ DEM shading: {terrainShading ? 'on' : 'off'}
+            </button>
+          </div>
+          <div className="mt-2 flex gap-1.5">
             <button type="button" onClick={exitDrive} aria-label="Exit drive mode"
               className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-400/20 px-2 py-1.5 text-xs font-semibold text-emerald-200">
               ← Back to orbit (Esc)
@@ -502,7 +526,9 @@ export default function App() {
 
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{DISCLAIMER}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                Moon texture is illustrative; markers sit at the published coordinates on the sphere grid. Terrain is a smooth sphere, not a DEM.
+                Moon texture is illustrative; markers sit at the published coordinates on the sphere grid.
+                Drive terrain is the real LRO LOLA DEM (10–20 m/px, NASA public domain) — see Evidence.
+                No sub-10 m boulders or craters are resolved; the scattered drive-scene rocks are decorative, with no collision.
                 LRO model: NASA, public domain. Moon texture: three.js example, NASA lunar imagery. Sun texture: Solar System Scope, CC BY 4.0. Earth: NASA Blue Marble.
               </p>
             </>
@@ -697,6 +723,8 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+            <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Drive terrain — real LRO LOLA DEM</h3>
+            <p className="mt-1 text-[13px] leading-snug text-slate-300">{TERRAIN_NOTE}</p>
             <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Sources</h3>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] text-slate-300">
               {SOURCES.map((s) => (

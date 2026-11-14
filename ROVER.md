@@ -57,9 +57,11 @@ code-built.
   breaks if the rover moves in world units. In Drive mode the Moon
   sphere, site markers, and LRO are hidden and a tangent-plane frame
   centred on the site is rendered instead: a ~500 m ground disc
-  (x = east, y = up, z = north), distance rings at 50/100/200 m, a
-  landing-point ring at the origin, deterministic scattered rocks,
-  and the rover at the origin. Sun directional light + Sun disc and
+  (x = east, y = up, z = north), terrain-following distance rings at
+  50/100/200 m, a landing-point ring at the origin, deterministic
+  scattered rocks, and the rover at the origin. The ground is the real
+  LOLA DEM heightfield (1200 m square, Step 2 — see TERRAIN.md), not
+  the flat disc Step 1 shipped. Sun directional light + Sun disc and
   the Earth globe are placed by alt/az **direction** from the site
   using the same ephemeris (`sunEarthAt` at the rover's live lat/lon),
   at local distances in metres. The starfield is kept. Camera
@@ -71,11 +73,14 @@ code-built.
   input, dt)` with throttle/reverse/steering/brake. `createRover(site)`
   factory. `localToLatLon` / `latLonToLocal` use R = 1,737,400 m.
 - **Terrain plug-in** — `surfaceHeightAt(lat, lon)` in
-  `app/src/lib/rover.js` is the ONE place Step 2's real DEM plugs in.
-  It returns 0 today (smooth sphere). `slopeAt` finite-differences
-  it, so the rover's height, pitch, and roll follow automatically
-  once a DEM is supplied via `setSurfaceHeightAt(fn)` — no other code
-  changes. `resetSurfaceHeightAt()` restores the smooth sphere.
+  `app/src/lib/rover.js` is fed by the real LOLA DEM since Step 2
+  (see TERRAIN.md): `LunarScene` lazy-loads the site's grid from
+  `public/terrain/<siteId>.json` and calls `setSurfaceHeightAt(fn)`
+  with a bilinear lookup (relative to the landing point).
+  `slopeAt` finite-differences it, so the rover's height, pitch, and
+  roll follow the real relief — no other code changes.
+  `resetSurfaceHeightAt()` restores the smooth sphere (used by tests
+  and as the fallback if a grid fails to load).
 - **GLB swap hook** — `loadRoverModel(url)` in
   `app/src/components/RoverModel.jsx` loads any GLB via three's
   GLTFLoader. The code-built group exposes `{ group, wheels,
@@ -107,8 +112,13 @@ code-built.
   (1.5 m/s), and steering rate are **chosen for a drivable feel,
   not NASA figures** — they are labelled `DRIVE_TUNING` in
   `rover.js` and stated as approximations here.
-- Terrain is still a **smooth sphere** until Step 2: no craters,
-  ridges, or slopes; the ground disc is flat and the rocks are
+- Terrain is now the **real LRO LOLA DEM** (Step 2, see TERRAIN.md):
+  one 1200 m × 1200 m grid per site (10 m/px for 10 sites, 20 m/px
+  for Cabeus / Mons Mouton Plateau / Nobile Rim 2), bilinear lookup
+  via `surfaceHeightAt`, ground mesh displaced from the same grid.
+  The rover's height, pitch, and roll follow the real relief
+  (Malapert: +17.7 m after 500 m north). Still NOT resolved: anything
+  below ~10–20 m (boulders, small craters); the scattered rocks are
   decorative (no collision).
 - The rover is **code-built, not the real vehicle**: proportions
   follow the verified LRV dimensions, but details (seats, mast,
