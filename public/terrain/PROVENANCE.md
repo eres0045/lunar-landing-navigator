@@ -113,19 +113,28 @@ sample0 = (OFFSET - 1) + rho * sin(lon) / SCALE
   cover Malapert (−85.99°) or 9 of the 13 sites — 10 m is the finest
   uniform product covering the default site.
 
-## What was NOT obtained
+## What was NOT obtained (updated 2026-11-14)
 
-- **LROC imagery texture:** none. Evidence — USGS Astrogeology
-  (`planetarymaps.usgs.gov`, WAC mosaic / global LDEM GeoTIFF) returns
-  Cloudflare 403 from this VM, direct and via proxy; the old LROC WMS
-  (`wms.lroc.asu.edu/lroc/wms`) now redirects to `data.lroc.im-ldi.com`,
-  which 404s on GetCapabilities; QuickMap's tile hosts found in its JS
-  bundle (`lroc-tiles.actgate.com`) do not connect from this VM. No NAC
-  strip or WAC mosaic file was downloaded, so no texture is shipped — the
-  DEM grids above are the only terrain asset. The 3D scene should shade
-  the real DEM live rather than use a fake texture. A NAC DTM for Malapert
-  was not pursued further once the 10 m LOLA grid verified: LOLA is the
-  authoritative elevation source and 10 m already covers the drive area.
+- **LROC imagery texture — OBTAINED 2026-11-14 (this bullet was
+  "none" before).** The old LROC WMS host is dead, but LROC moved to
+  `im-ldi.com`: the WMS at `http://wms.im-ldi.com/lroc/wms` answers
+  GetCapabilities (351 layers) including `luna_nac_pole_control_south`,
+  the controlled 1 m/px south-pole mosaic. 8 of 13 south-pole sites
+  were staged as 1024×1024 JPEGs over the exact ±600 m DEM box
+  (`public/terrain/nac/`, manifest with per-site bbox). No coverage:
+  cabeus, nobile2 (mosaic edge ≈ −84°). Black PSR floors: shoemaker,
+  sverdrup, faustini — real data, permanent shadow, not brightened.
+  Full route log: project-root `raw-lroc/PROVENANCE.md`. USGS
+  Astrogeology still returns Cloudflare 403 from this VM.
+- **Apollo 15 NAC DTM — OBTAINED 2026-11-14.** The Space ROS PR
+  (space-ros/simulation#32) ships a real LROC NAC DTM heightmap of
+  the Apollo 15 landing site: 257×257 px, 514×514 m, 2 m/px, 49 m
+  relief (`public/terrain/apollo15.json`). Heights are relative
+  (grey 0–255 → 0–49 m, Gazebo convention; absolute datum unknown);
+  north alignment of the staged heightmap is unverified. The
+  package's diffuse/normal textures have no stated provenance and
+  were NOT shipped. Apollo 15 is a separate 14th site, clearly
+  labelled as an equatorial historic site, never as Artemis terrain.
 - **Full 1.8 GB DEM files:** deliberately NOT downloaded. Only the row
   bands covering each site were fetched via HTTP Range requests (verified
   `Accept-Ranges: bytes`, 206 responses; file sizes match labels exactly:

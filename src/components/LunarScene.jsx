@@ -14,11 +14,19 @@
  * are not registered to the marker grid). Drive-mode terrain is the REAL
  * LRO LOLA DEM (10–20 m/px, per-site grid in public/terrain/) — the
  * ground mesh is displaced from it and the rover follows it via
- * `surfaceHeightAt`; shading is elevation tint + slope shading computed
- * from the real heights only (no fake texture — none was obtainable).
- * No sub-10 m boulders/craters are resolved; the scattered rocks are
- * decorative (no collision). The LRO model is NASA public domain; it
- * orbits as a prop and is skipped silently if it fails to load.
+ * `surfaceHeightAt`; 8 of the 13 sites also carry the REAL LROC NAC
+ * 1 m/px ground imagery (public/terrain/nac/) mapped onto the same
+ * box — Cabeus and Nobile Rim 2 have no NAC coverage, and the three
+ * PSR floors are genuinely black (permanently shadowed), so those
+ * sites keep DEM shading only. Lighting: the Sun direction comes from
+ * the real ephemeris and the Drive scene renders real-time shadows
+ * from the DEM mesh (PCF shadow map); brightness is adjusted for
+ * readability — the real surface at LOW SUN is nearly dark — and the
+ * NAC mosaic has one baked Sun angle, so texture shadows do not move
+ * with the live Sun. No sub-10 m boulders/craters are resolved; the
+ * scattered rocks are decorative (no collision). The LRO model is NASA
+ * public domain; it orbits as a prop and is skipped silently if it
+ * fails to load.
  *
  * Camera: drag to orbit, wheel to zoom, presets fly to a framing.
  * jsdom has no WebGL, so the component renders a fallback message there.
@@ -29,8 +37,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sunEarthAt } from '../lib/ephemeris.js';
 import { SITES } from '../lib/data.js';
 import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
-import { loadTerrainGrid, createTerrainLookup } from '../lib/terrain.js';
-import { buildTerrainGeometry, terrainRingPoints } from './terrainMesh.js';
+import { loadTerrainGrid, createTerrainLookup, textureStatusForSite } from '../lib/terrain.js';
+import { buildTerrainGeometry, terrainRingPoints, loadGroundTexture } from './terrainMesh.js';
 import { createRoverGroup, loadRealRover, driverCameraPose } from './RoverModel.jsx';
 import { DustSystem, TrackTrail } from './RoverEffects.js';
 
@@ -141,6 +149,9 @@ export default function LunarScene({
           resolutionM: grid.resolutionM, source: grid.source,
           reliefM: grid.maxHeightM - grid.minHeightM,
           centerHeightM: grid.centerHeightM,
+          halfSizeM: grid.halfSizeM ?? 600,
+          sourceShort: grid.siteId === 'apollo15' ? 'LROC NAC DTM' : 'LRO LOLA DEM',
+          texture: textureStatusForSite(site.id),
         });
       })
       .catch(() => {
@@ -216,10 +227,16 @@ export default function LunarScene({
     setWebglOk(true);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth || 800, mount.clientHeight || 600);
+    // Real-time shadows: the Drive Sun casts the DEM terrain's and the
+    // rover's shadows (PCF, sharp-edged — the Moon has no atmosphere
+    // to soften them). Only Drive objects opt in (castShadow below).
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020617);
+    // Pitch-black sky — space has no atmosphere and no haze.
+    scene.background = new THREE.Color(0x000000);
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
     const updateCameraAspect = () => {
       const w = mount.clientWidth || 800;
@@ -253,10 +270,27 @@ export default function LunarScene({
     scene.add(moon);
 
     // Sun: directional light + visible disc. Earth: small textured globe.
+    // The Sun casts real-time shadows in Drive mode (shadow camera
+    // ±160 m around the rover, following the light target); the shadow
+    // map is sized for the 1.2 km drive area, not the whole Moon.
     const sunLight = new THREE.DirectionalLight(0xfff2d9, 3.2);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -160;
+    sunLight.shadow.camera.right = 160;
+    sunLight.shadow.camera.top = 160;
+    sunLight.shadow.camera.bottom = -160;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 1200;
+    sunLight.shadow.bias = -0.0002;
+    sunLight.shadow.normalBias = 0.6;
     scene.add(sunLight);
     scene.add(sunLight.target);
-    scene.add(new THREE.AmbientLight(0x334155, 0.55));
+    // Ambient fill: full strength in orbit view, dimmed in Drive mode
+    // so the Sun + shadows carry the contrast (the Moon's real fill is
+    // Earthshine + starlight — faint, labelled in the HUD/Evidence).
+    const ambientLight = new THREE.AmbientLight(0x334155, 0.55);
+    scene.add(ambientLight);
     const sunDisc = new THREE.Mesh(
       new THREE.SphereGeometry(0.45, 24, 16),
       new THREE.MeshBasicMaterial({ color: 0xffdf80 }),
@@ -323,15 +357,23 @@ export default function LunarScene({
     const driveGroup = new THREE.Group();
     driveGroup.visible = false;
     scene.add(driveGroup);
-    // Dim fill so the rover stays readable when the Sun sits below
-    // the horizon (common at the poles) — it does not fake a Sun.
-    driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x1a1a22, 0.55));
+    // Earthshine + readability fill for the Drive scene. At the poles
+    // the Sun sits at 0–6°, so flat ground gets ~10% of direct Sun and
+    // long DEM shadows cover most of the near field — with a faint fill
+    // the surface reads as pure black and the real NAC texture is
+    // invisible. The fill is raised (0.8) so the ground stays readable;
+    // it is a display choice, labelled "brightness adjusted for
+    // readability" in the HUD/Evidence — it does not fake a Sun.
+    driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x2a2a33, 0.8));
     // Drive ground: a flat 500 m disc until this site's real LOLA DEM
     // loads (applyTerrain swaps in the displaced 1200 m heightfield —
     // one vertex per grid node, same heights the rover drives on).
+    // The ground both casts (ridge shadows) and receives shadows.
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x8f8d88, roughness: 1, metalness: 0 });
     const ground = new THREE.Mesh(new THREE.CircleGeometry(500, 64), groundMat);
     ground.rotation.x = -Math.PI / 2;
+    ground.castShadow = true;
+    ground.receiveShadow = true;
     driveGroup.add(ground);
     // Distance rings (50 / 100 / 200 m) so motion is judgeable — drawn
     // as terrain-following line loops so they are never buried by the
@@ -357,6 +399,8 @@ export default function LunarScene({
     const rockSpecs = [];
     for (let i = 0; i < 140; i++) {
       const rock = new THREE.Mesh(rockGeo, rockMat);
+      rock.castShadow = true;
+      rock.receiveShadow = true;
       const a = rockRand() * Math.PI * 2;
       const d = 8 + rockRand() * 240;
       const s = 0.2 + rockRand() * 1.3;
@@ -372,6 +416,7 @@ export default function LunarScene({
     // mesh, re-seat rings + rocks on the DEM, toggle DEM shading.
     let terrainActive = false;
     let terrainLookup = null; // feeds the wheel-track ribbon heights
+    let terrainSiteId = null; // guards the async texture load (below)
     const updateRingLines = (lookup) => {
       for (const { line, radius, lift } of ringLines) {
         line.geometry.dispose();
@@ -389,16 +434,34 @@ export default function LunarScene({
       applyTerrain(grid, lookup) {
         terrainActive = true;
         terrainLookup = lookup;
+        terrainSiteId = grid.siteId;
+        const hasTexture = textureStatusForSite(grid.siteId).status === 'nac';
         ground.geometry.dispose();
-        ground.geometry = buildTerrainGeometry(grid);
+        ground.geometry = buildTerrainGeometry(grid, { forTexture: hasTexture });
         ground.rotation.x = 0; // heightfield is already in (east, up, north)
         this.setShading(propsRef.current.terrainShading);
+        // Real NAC ground imagery for this site, loaded lazily — the
+        // mesh already carries the matching uv; sites without a texture
+        // (no NAC coverage / PSR black) keep DEM shading only.
+        groundMat.map = null;
+        groundMat.needsUpdate = true;
+        if (hasTexture) {
+          loadGroundTexture(grid.siteId, base).then((tex) => {
+            // Only apply if this grid is still the active one (the
+            // user may have switched sites while the image loaded).
+            if (!tex || !terrainActive || terrainSiteId !== grid.siteId) return;
+            groundMat.map = tex;
+            groundMat.needsUpdate = true;
+          });
+        }
         updateRingLines(lookup);
         seatRocks(lookup);
       },
       clearTerrain() {
         terrainActive = false;
         terrainLookup = null;
+        terrainSiteId = null;
+        groundMat.map = null;
         ground.geometry.dispose();
         ground.geometry = new THREE.CircleGeometry(500, 64);
         ground.rotation.x = -Math.PI / 2;
@@ -439,6 +502,14 @@ export default function LunarScene({
     // the model state via onRoverModelStatus ('loading' / 'real' /
     // 'fallback') so the stand-in is never shown silently.
     let roverParts = createRoverGroup();
+    // The rover casts and receives shadows in Drive mode (its own
+    // shadow on the DEM is part of the honest lighting).
+    const applyRoverShadows = (parts) => {
+      parts.group.traverse((o) => {
+        if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+      });
+    };
+    applyRoverShadows(roverParts);
     driveGroup.add(roverParts.group);
     let roverLoadAlive = true;
     onRoverModelStatus?.('loading');
@@ -447,6 +518,7 @@ export default function LunarScene({
         if (!roverLoadAlive) return;
         driveGroup.remove(roverParts.group);
         roverParts = real;
+        applyRoverShadows(real);
         driveGroup.add(real.group);
         onRoverModelStatus?.('real');
       })
@@ -537,6 +609,12 @@ export default function LunarScene({
         lroGroup.visible = false;
         for (const m of markers.values()) m.visible = false;
         driveGroup.visible = true;
+        // Raise ambient fill in Drive mode: at polar Sun angles the
+        // flat ground gets ~10% of direct Sun and sits mostly in long
+        // DEM shadows, so the 0.18 orbit-style fill leaves the real
+        // surface black. 0.7 keeps the NAC texture + DEM shading
+        // readable; the Sun + shadows still carry the contrast.
+        ambientLight.intensity = 0.7;
 
         const rover = roverStateRef?.current;
         const input = driveInputRef?.current || {};
@@ -623,6 +701,7 @@ export default function LunarScene({
       lroGroup.visible = true;
       for (const m of markers.values()) m.visible = true;
       driveGroup.visible = false;
+      ambientLight.intensity = 0.55;
       sunDisc.scale.setScalar(1);
       earth.scale.setScalar(1);
       // Ease the camera toward the desired framing.

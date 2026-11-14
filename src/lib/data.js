@@ -18,7 +18,7 @@
 import { sunEarthAt, moonIllumination } from './ephemeris.js';
 
 export const DISCLAIMER =
-  'Computed Sun/Earth positions, ±0.1° geometry. Flat-horizon model — no terrain shadowing: real ridges and crater rims can hide the Sun/Earth near the horizon. Planning aid only, not for flight decisions.';
+  'Computed Sun/Earth positions, ±0.1° geometry. Flat-horizon model for the verdicts — no terrain shadowing in the POWER/COMM numbers: real ridges and crater rims can hide the Sun/Earth near the horizon. The Drive 3D view does render real-time shadows from the DEM mesh (Sun direction from the same ephemeris) as a view aid — those rendered shadows are not a verdict input. Planning aid only, not for flight decisions.';
 
 export const POWER_RULE =
   'POWER rule (flat-horizon geometry): Sun above 0° = SUNLIT · Sun −2° to 0° = LOW SUN · Sun below −2° = DARK.';
@@ -47,12 +47,17 @@ export const SITES = [
   { id: 'shoemaker', name: 'Shoemaker PSR', lat: -88.0517, lon: 45.488, type: 'psr', note: 'Centre of the water-ice-bearing PSR in Shoemaker crater (Lemelin et al. 2021) — NOT a region centre.' },
   { id: 'sverdrup', name: 'Sverdrup PSR', lat: -88.2432, lon: -143.9156, type: 'psr', note: 'PSR centre “Sverdrup 1” (Lemelin et al. 2021) — NOT a region centre.' },
   { id: 'faustini', name: 'Faustini Rim A PSR', lat: -87.146, lon: 84.075, type: 'psr', note: 'PSR centre (PSJ 2024 Table 2; PMC exosphere Table A2 agree exactly) — NOT a region centre.' },
+  {
+    id: 'apollo15', name: 'Apollo 15 — Hadley Rille', lat: 26.132, lon: 3.634, type: 'apollo-landing',
+    note: 'Apollo 15 landing site (Hadley Rille, 26.13°N, 3.63°E) — an equatorial historic site, NOT a south-pole/Artemis site. Drive terrain is the real LROC NAC DTM (2 m/px, 514 m square); heights are relative (absolute datum unknown) and the staged heightmap’s north alignment is unverified.',
+  },
 ];
 
 export const TYPE_LABEL = {
   'artemis-region': 'Artemis III region',
   psr: 'PSR centre',
   'illumination-study': 'Illumination-study spot',
+  'apollo-landing': 'Apollo landing site',
 };
 
 export function getSite(id) {
@@ -104,7 +109,7 @@ export function compareSites(date, siteIds) {
 }
 
 /**
- * Rank all 13 sites for one instant: best first by POWER (Sun alt), then
+ * Rank all sites for one instant: best first by POWER (Sun alt), then
  * COMM (Earth alt). Returns verdict packs with a 1-based rank.
  */
 export function rankSites(date) {
@@ -192,10 +197,10 @@ export const PUBLISHED_ILLUMINATION = [
 ];
 
 export const TERRAIN_NOTE =
-  'Drive mode runs on the real LRO LOLA elevation model: one 1200 m × 1200 m grid per site, sampled from LDEM_85S_10M (10 m/px, 10 sites) or LDEM_80S_20M (20 m/px: Cabeus, Mons Mouton Plateau, Nobile Rim 2), LRO-L-LOLA-4-GDR-V1.0, NASA public domain. Heights are metres above the 1737.4 km reference sphere, shown relative to the landing point (landing point = 0 m); the rover follows them by bilinear interpolation, and the ground mesh is displaced from the same grid with elevation-tint + slope shading computed from the real heights — no imagery texture (none was obtainable: no LROC texture could be fetched, so nothing fake is substituted). Limits: 10–20 m resolution — no sub-10 m boulders or small craters are resolved, the scattered drive-scene rocks are decorative with no collision, and Sun/Earth verdicts still use the flat-horizon model (no terrain shadowing). Full provenance, per-site relief and verification: public/terrain/PROVENANCE.md.';
+  'Drive mode runs on the real LRO LOLA elevation model: one 1200 m × 1200 m grid per site, sampled from LDEM_85S_10M (10 m/px, 10 sites) or LDEM_80S_20M (20 m/px: Cabeus, Mons Mouton Plateau, Nobile Rim 2), LRO-L-LOLA-4-GDR-V1.0, NASA public domain. Heights are metres above the 1737.4 km reference sphere, shown relative to the landing point (landing point = 0 m); the rover follows them by bilinear interpolation, and the ground mesh is displaced from the same grid. 8 of the 13 sites also carry the real LROC NAC 1 m/px ground imagery (controlled south-pole mosaic, Lunaserv WMS) mapped onto the same 1.2 km box, with DEM elevation-tint + slope shading as an overlay — Cabeus and Nobile Rim 2 have no NAC coverage (they sit north of the mosaic edge, ≈ −84°) and the Shoemaker, Sverdrup and Faustini PSR floors are genuinely black (permanently shadowed, no sunlit imagery exists), so those sites keep DEM shading only and no other site’s imagery is ever stretched onto them. The NAC mosaic has one baked Sun angle, so texture shadows do not move with the app’s live Sun. Lighting: the Sun’s direction comes from the real ephemeris and the Drive scene renders real-time shadows from the DEM mesh (sharp, no atmosphere); brightness is adjusted for readability — the real surface at LOW SUN is nearly dark — with a faint labelled Earthshine fill. Limits: 10–20 m resolution — no sub-10 m boulders or small craters are resolved, the scattered drive-scene rocks are decorative with no collision, and the Sun/Earth verdicts still use the flat-horizon model (the rendered shadows are a view aid, not a verdict input). Full provenance, per-site relief and verification: public/terrain/PROVENANCE.md.';
 
 export const ROVER_NOTE =
-  'Drive mode uses the real Apollo LRV mesh: Deutsches Museum | Digital, "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, via NASA Space ROS (space-ros/simulation#32) — DAE → Blender decimate (body 0.2×, wheels 0.2×, covers 0.5×; 375,237 → 97,340 tris) → GLB, textures 2048px PNG → 1024px JPEG, scaled to the published LRV dimensions (3.1 m long, 1.83 m track, 0.818 m wheels, ground at y=0). ShareAlike applies to the adapted mesh. The code-built rover remains as the fallback if the GLB fails to load. The GLB is preloaded in the background while the user is in orbit view, so Drive mode usually opens on the real model; the HUD reports loading / real / fallback. Driver cam sits 2.3 m ahead of the rover centre and 1.9 m up — past the high-gain dish (front face z ≈ +1.55 m, mast top 1.86 m on the real mesh) — so the antenna stays behind the camera. Wheel dust and track marks in Drive mode are illustrative effects, not regolith physics. Full pipeline: ROVER.md.';
+  'Drive mode uses the real Apollo LRV mesh: Deutsches Museum | Digital, "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, via NASA Space ROS (space-ros/simulation#32) — DAE → Blender decimate (body 0.2×, wheels 0.2×, covers 0.5×; 375,237 → 97,340 tris) → GLB, textures 2048px PNG → 1024px JPEG, scaled to the published LRV dimensions (3.1 m long, 1.83 m track, 0.818 m wheels, ground at y=0). ShareAlike applies to the adapted mesh. The code-built rover remains as the fallback if the GLB fails to load. The GLB is preloaded in the background while the user is in orbit view, so Drive mode usually opens on the real model; the HUD reports loading / real / fallback. Driver cam sits in the right seat, opposite the high-gain dish (0.6 m right of centre, 0.65 m ahead, eye height 1.45 m — the dish, front face z ≈ +1.55 m, mast top 1.86 m on the real mesh, stays out of frame). Wheel dust and track marks in Drive mode are illustrative effects, not regolith physics. Full pipeline: ROVER.md.';
 
 /** Sources behind the app (SOURCES.md §A5 + §B + §C). */
 export const SOURCES = [
@@ -211,6 +216,8 @@ export const SOURCES = [
   { label: 'IAU WGCCRE 2009 report — lunar rotation model (claimed accurate to 0.1°)', url: 'https://pubs.usgs.gov/publication/70157540' },
   { label: 'LRO LOLA GDR LDEM_85S_10M (10 m/px, lat −85°…−90°) — Drive terrain for 10 sites', url: 'https://imbrium.mit.edu/DATA/LOLA_GDR/POLAR/IMG/LDEM_85S_10M.IMG' },
   { label: 'LRO LOLA GDR LDEM_80S_20M (20 m/px, lat −80°…−90°) — Drive terrain for Cabeus, Mons Mouton Plateau, Nobile Rim 2', url: 'https://imbrium.mit.edu/DATA/LOLA_GDR/POLAR/IMG/LDEM_80S_20M.IMG' },
+  { label: 'LROC NAC controlled south-pole mosaic, 1 m/px (luna_nac_pole_control_south, Lunaserv WMS) — Drive ground imagery for 8 of 13 sites', url: 'http://wms.im-ldi.com/lroc/wms' },
+  { label: 'LROC WAC global mosaic, 100 m/px — regional south-pole imagery (fallback where NAC has no coverage)', url: 'http://wms.im-ldi.com/lroc/wms' },
   { label: 'NASA LRO Data Products — mission data hub', url: 'https://science.nasa.gov/mission/lro/data-products/' },
   { label: 'NASA Lunar Surface Data Book (ACD-50044 Rev A, May 2023) — LOLA illumination analysis', url: 'https://ntrs.nasa.gov/api/citations/20230007818/downloads/ACD-50044%20Lunar%20Surface%20Data%20Book%20Rev%20A.pdf' },
   { label: 'Challenge statement: “Lunar Landing Site Navigator” (CLPS Lunar Mission Browser, CH-04), NASA Space Apps 2026', url: 'https://edeon.sonoma.edu/nasaspaceapps-26/' },
@@ -223,7 +230,7 @@ export const METHOD = [
   'Both are rotated into Moon body-fixed coordinates with the IAU lunar rotation model: pole RA 269.9949°, Dec 66.5392°, prime meridian W = 38.3213° + 13.17635815°/day, plus the 13-term nutation series from NAIF PCK pck00010.tpc.',
   'Altitude/azimuth use the observer’s local up / north / east at the site’s selenographic lat/lon (lon east-positive, −180…+180°). Azimuth is measured from north, eastward.',
   'Validation: the sub-Earth point from this transform matches astronomy-engine’s own Libration() to ≤0.027° across 7 dates; the reference values in the table below reproduce to ≤0.01°.',
-  'What is NOT modelled: terrain shadowing (no per-site horizon mask exists for all 9 regions — see Sources), lunar parallax beyond the geocentric vectors, and refraction (none on the Moon).',
+  'What is NOT modelled: terrain shadowing in the verdicts (no per-site horizon mask exists for all 9 regions — see Sources; the Drive 3D view separately renders real-time shadows from the DEM mesh, but those are a view aid, not a verdict input), lunar parallax beyond the geocentric vectors, and refraction (none on the Moon).',
 ];
 
 /** §C3 reference values, as asserted in src/lib/ephemeris.test.js. */

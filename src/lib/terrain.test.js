@@ -9,7 +9,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   createTerrainLookup, terrainVertexColors, validateGrid,
+  terrainUV, textureStatusForSite, NAC_TEXTURED_SITES,
 } from './terrain.js';
+import nacManifest from '../../public/terrain/nac/manifest.json';
 import { buildTerrainGeometry } from '../components/terrainMesh.js';
 import {
   createRover, step, setSurfaceHeightAt, resetSurfaceHeightAt,
@@ -30,12 +32,45 @@ const SITE = { id: 'malapert', lat: -85.99, lon: -0.125 };
 afterEach(() => resetSurfaceHeightAt());
 
 describe('grid loading sanity', () => {
-  it('all 13 site grids are present and validate', () => {
-    expect(Object.keys(grids).sort()).toEqual(Object.keys(checks).sort());
+  it('all 14 site grids are present and validate (13 LOLA + Apollo 15 NAC DTM)', () => {
+    expect(Object.keys(grids).sort()).toEqual([...Object.keys(checks), 'apollo15'].sort());
     for (const grid of Object.values(grids)) {
       expect(() => validateGrid(grid)).not.toThrow();
       expect(grid.noDataNodes).toBe(0);
     }
+  });
+
+  it('terrain geometry faces UP: mean vertex-normal y > 0.9 (winding regression)', () => {
+    // Nov 14: the index order (a, d, b) / (b, d, e) wound every
+    // triangle facing DOWN (mean normal y −0.99), so the Sun never lit
+    // the ground and the DEM/NAC terrain rendered black at all sites.
+    const geo = buildTerrainGeometry(grids.malapert, { forTexture: true });
+    const nor = geo.attributes.normal.array;
+    let sum = 0;
+    for (let i = 1; i < nor.length; i += 3) sum += nor[i];
+    expect(sum / (nor.length / 3)).toBeGreaterThan(0.9);
+    // First triangle's face normal also points up.
+    const pos = geo.attributes.position.array;
+    const idx = geo.index.array;
+    const p = (i) => [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
+    const [a, b, c] = [p(idx[0]), p(idx[1]), p(idx[2])];
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const ny = u[2] * v[0] - u[0] * v[2];
+    expect(ny).toBeGreaterThan(0);
+  });
+
+  it('Apollo 15 is a 2 m NAC DTM grid, 257x257, 514 m square, 49 m relief', () => {
+    const g = grids.apollo15;
+    expect(g.spacingM).toBeCloseTo(514 / 256, 6);
+    expect(g.rows).toBe(257);
+    expect(g.cols).toBe(257);
+    expect(g.halfSizeM).toBe(257);
+    expect(g.centerHeightM).toBeCloseTo(45.35, 1);
+    expect(g.maxHeightM - g.minHeightM).toBeCloseTo(49, 1);
+    expect(g.minHeightM).toBeCloseTo(0, 1);
+    expect(g.centerLat).toBeCloseTo(26.132, 3);
+    expect(g.centerLon).toBeCloseTo(3.634, 3);
   });
 
   it('Malapert is a 10 m grid, 121x121, centre 4807.6 m', () => {
@@ -225,5 +260,68 @@ describe('DEM mesh geometry', () => {
   it('a 20 m grid builds a 61x61 mesh', () => {
     const geo = buildTerrainGeometry(grids.cabeus);
     expect(geo.getAttribute('position').count).toBe(61 * 61);
+  });
+});
+
+describe('NAC ground texture — UV mapping + per-site status', () => {
+  it('terrainUV maps the box corners: west→u=0, east→u=1, north→v=1, south→v=0', () => {
+    const g = grids.malapert; // 121x121, row 0 = north edge, col 0 = west edge
+    expect(terrainUV(g, 0, 0)).toEqual({ u: 0, v: 1 }); // NW corner
+    expect(terrainUV(g, 0, 120)).toEqual({ u: 1, v: 1 }); // NE corner
+    expect(terrainUV(g, 120, 0)).toEqual({ u: 0, v: 0 }); // SW corner
+    expect(terrainUV(g, 120, 120)).toEqual({ u: 1, v: 0 }); // SE corner
+    expect(terrainUV(g, 60, 60)).toEqual({ u: 0.5, v: 0.5 }); // centre
+  });
+
+  it('buildTerrainGeometry carries a uv attribute matching the corners', () => {
+    const geo = buildTerrainGeometry(grids.malapert, { forTexture: true });
+    const uv = geo.getAttribute('uv');
+    expect(uv.count).toBe(121 * 121);
+    // Vertex (r=0, c=0) is the first vertex: NW corner → u=0, v=1.
+    expect(uv.getX(0)).toBeCloseTo(0, 6);
+    expect(uv.getY(0)).toBeCloseTo(1, 6);
+    // Vertex (r=120, c=120) is the last: SE corner → u=1, v=0.
+    const last = 121 * 121 - 1;
+    expect(uv.getX(last)).toBeCloseTo(1, 6);
+    expect(uv.getY(last)).toBeCloseTo(0, 6);
+  });
+
+  it('textureStatusForSite: 8 NAC sites, 2 no-coverage, 3 PSR — nothing else', () => {
+    const byStatus = (want) => Object.entries(grids)
+      .filter(([, grid]) => textureStatusForSite(grid.siteId).status === want)
+      .map(([id]) => id).sort();
+    expect(byStatus('nac')).toHaveLength(8);
+    expect(byStatus('no-coverage')).toEqual(['cabeus', 'nobile2']);
+    expect(byStatus('psr')).toEqual(['faustini', 'shoemaker', 'sverdrup']);
+    // Unknown ids fall back to no-coverage, never to a texture.
+    expect(textureStatusForSite('nowhere').status).toBe('no-coverage');
+    // Apollo 15 has its own status: real NAC DTM terrain, no imagery.
+    expect(textureStatusForSite('apollo15').status).toBe('nac-dtm');
+  });
+
+  it('shipped NAC manifest matches the textured-site set exactly', () => {
+    expect(Object.keys(nacManifest.sites).sort()).toEqual([...NAC_TEXTURED_SITES].sort());
+    for (const [siteId, entry] of Object.entries(nacManifest.sites)) {
+      expect(entry.resolutionM).toBe(1);
+      expect(entry.licence).toMatch(/public domain/i);
+      expect(entry.file).toBe(`terrain/nac/${siteId}.jpg`);
+    }
+    // The gamma-0.45 exposure lift is recorded, not hidden.
+    expect(nacManifest.exposure).toMatch(/Gamma 0\.45/);
+  });
+
+  it('forTexture vertex colours stay near-white so the imagery reads', () => {
+    const plain = terrainVertexColors(grids.malapert);
+    const textured = terrainVertexColors(grids.malapert, { forTexture: true });
+    let plainMin = 1; let texturedMin = 1;
+    for (let i = 0; i < plain.length; i++) {
+      plainMin = Math.min(plainMin, plain[i]);
+      texturedMin = Math.min(texturedMin, textured[i]);
+    }
+    // Bare DEM tint dips to ~0.2 (0.72 elev × 0.65 slope × 0.30 base);
+    // textured colours never drop below 0.66 (0.88 elev × 0.75 slope).
+    expect(plainMin).toBeLessThan(0.5);
+    expect(texturedMin).toBeGreaterThanOrEqual(0.66);
+    expect(texturedMin).toBeLessThanOrEqual(1);
   });
 });

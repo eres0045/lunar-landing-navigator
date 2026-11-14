@@ -111,16 +111,32 @@ export function createTerrainLookup(grid) {
  * slope shading (steeper = darker). No synthetic noise — nothing here
  * invents sub-10 m detail. Returns a Float32Array of rows*cols*3 RGB
  * values in [0, 1], in the same row-major order as the grid.
+ *
+ * With `forTexture: true` the mesh also carries a real NAC imagery
+ * texture, so the colours only add a gentle relief cue (near-white
+ * base, elevation 0.88–1.0, slope darkening capped at 0.25) instead
+ * of the stronger tint used on the bare DEM (base lunar grey,
+ * elevation 0.72–1.0, slope cap 0.35).
  */
-export function terrainVertexColors(grid) {
+export function terrainVertexColors(grid, { forTexture = false } = {}) {
   validateGrid(grid);
   const { rows, cols, spacingM, centerHeightM, heights } = grid;
   const minRel = grid.minHeightM - centerHeightM;
   const maxRel = grid.maxHeightM - centerHeightM;
   const span = Math.max(maxRel - minRel, 1);
   const colors = new Float32Array(rows * cols * 3);
-  // Base lunar grey (slightly warm), matching the old flat ground.
-  const base = [0.56, 0.55, 0.53];
+  // Base lunar grey (slightly warm). The real lunar albedo is ~0.12,
+  // but a bare 0.12 base under the 3.2 Sun + 0.7/0.8 fill reads as
+  // near-black even in full Sun; 0.30 is the readability compromise
+  // that keeps high-Sun sites (Apollo 15, Sun +61°) a mid lunar grey
+  // instead of blown-out white (the old 0.56 base rendered at mean
+  // 173/255 there). With a real NAC texture on the mesh the base is
+  // near-white so the imagery stays readable and only the relief cue
+  // shows through.
+  const base = forTexture ? [1, 1, 1] : [0.30, 0.29, 0.28];
+  const elevLo = forTexture ? 0.88 : 0.72;
+  const slopeCap = forTexture ? 0.25 : 0.35;
+  const slopeRate = forTexture ? 1.0 : 1.2;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const h = heights[r][c] - centerHeightM;
@@ -129,10 +145,10 @@ export function terrainVertexColors(grid) {
       const hW = heights[r][Math.max(c - 1, 0)];
       const hE = heights[r][Math.min(c + 1, cols - 1)];
       const slope = Math.hypot(hS - hN, hE - hW) / (2 * spacingM);
-      // Elevation tint: 0.72 (lowest) → 1.0 (highest).
-      const elev = 0.72 + 0.28 * ((h - minRel) / span);
-      // Slope shading: flat = 1.0, a 20% grade ≈ 0.76.
-      const shade = 1 - Math.min(0.35, slope * 1.2);
+      // Elevation tint: elevLo (lowest) → 1.0 (highest).
+      const elev = elevLo + (1 - elevLo) * ((h - minRel) / span);
+      // Slope shading: flat = 1.0, a 20% grade ≈ 0.76 (0.80 textured).
+      const shade = 1 - Math.min(slopeCap, slope * slopeRate);
       const i = (r * cols + c) * 3;
       colors[i] = base[0] * elev * shade;
       colors[i + 1] = base[1] * elev * shade;
@@ -140,6 +156,62 @@ export function terrainVertexColors(grid) {
     }
   }
   return colors;
+}
+
+/**
+ * UV for one DEM grid vertex (r, c): the ground texture is the real
+ * LROC NAC mosaic over the exact same ±600 m box, linear in lon/lat,
+ * row 0 = north edge, col 0 = west edge — so u runs west→east and
+ * v runs south→north (three.js v=1 is the top of the image = north).
+ */
+export function terrainUV(grid, r, c) {
+  validateGrid(grid);
+  const { rows, cols } = grid;
+  return { u: c / (cols - 1), v: 1 - r / (rows - 1) };
+}
+
+/**
+ * Real NAC ground-texture status per site (LROC NAC controlled
+ * south-pole mosaic, 1 m/px — see public/terrain/PROVENANCE.md and
+ * raw-lroc/PROVENANCE.md). 8 sites have a usable texture; Cabeus and
+ * Nobile Rim 2 sit north of the mosaic edge (≈ −84°) so no NAC exists
+ * for them anywhere checked; Shoemaker, Sverdrup and Faustini are
+ * permanently shadowed craters whose mosaic is genuinely black.
+ * Never stretch another site's imagery onto these sites.
+ */
+export const NAC_TEXTURED_SITES = new Set([
+  'haworth', 'malapert', 'mouton-plateau', 'mouton',
+  'nobile1', 'gerlache2', 'slater', 'connecting-ridge',
+]);
+const PSR_SITES = new Set(['shoemaker', 'sverdrup', 'faustini']);
+
+export function textureStatusForSite(siteId) {
+  if (siteId === 'apollo15') {
+    return {
+      status: 'nac-dtm',
+      label: 'Real LROC NAC DTM terrain, 2 m/px',
+      note: 'Drive terrain is the real LROC NAC DTM of the Apollo 15 landing site (514 m square, 2 m/px, NASA public domain) — the finest terrain in the app. Heights are relative (absolute datum unknown); north alignment of the staged heightmap is unverified. No ground imagery — DEM shading only.',
+    };
+  }
+  if (NAC_TEXTURED_SITES.has(siteId)) {
+    return {
+      status: 'nac',
+      label: 'Real LROC NAC imagery, 1 m/px',
+      note: 'Ground texture is the real LROC NAC controlled south-pole mosaic (1 m/px, NASA public domain) over this exact 1.2 km box. The mosaic has one baked Sun angle, so texture shadows do not move with the app’s live Sun.',
+    };
+  }
+  if (PSR_SITES.has(siteId)) {
+    return {
+      status: 'psr',
+      label: 'Permanently shadowed — no sunlit imagery exists',
+      note: 'This is a permanently shadowed crater floor: the real NAC mosaic is genuinely black here because the Sun never reaches it. DEM shading only — the black mosaic is never brightened.',
+    };
+  }
+  return {
+    status: 'no-coverage',
+    label: 'No NAC coverage — DEM shading only',
+    note: 'No LROC NAC mosaic coverage exists for this site (it sits north of the mosaic edge, ≈ −84°). DEM shading only — no other site’s imagery is stretched onto it.',
+  };
 }
 
 // ---- Lazy loading (one grid per site, cached) -----------------------

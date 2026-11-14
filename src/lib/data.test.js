@@ -9,11 +9,12 @@ import {
 } from './data.js';
 
 describe('sites', () => {
-  it('has exactly the 13 sourced sites: 9 Artemis regions + 4 extras', () => {
-    expect(SITES).toHaveLength(13);
+  it('has exactly the 14 sourced sites: 9 Artemis regions + 4 extras + Apollo 15', () => {
+    expect(SITES).toHaveLength(14);
     expect(SITES.filter((s) => s.type === 'artemis-region')).toHaveLength(9);
     expect(SITES.filter((s) => s.type === 'psr')).toHaveLength(3);
     expect(SITES.filter((s) => s.type === 'illumination-study')).toHaveLength(1);
+    expect(SITES.filter((s) => s.type === 'apollo-landing')).toHaveLength(1);
   });
   it('uses the exact SOURCES.md §B coordinates', () => {
     expect(getSite('malapert')).toMatchObject({ lat: -85.99, lon: -0.125 });
@@ -23,6 +24,7 @@ describe('sites', () => {
     expect(getSite('faustini')).toMatchObject({ lat: -87.146, lon: 84.075 });
     expect(getSite('slater')).toMatchObject({ lat: -87.149, lon: 126.134 });
     expect(getSite('gerlache2')).toMatchObject({ lat: -88.225, lon: -65.421 });
+    expect(getSite('apollo15')).toMatchObject({ lat: 26.132, lon: 3.634 });
   });
   it('labels extras by type, never as region centres', () => {
     expect(getSite('shoemaker').note).toMatch(/NOT a region centre/);
@@ -85,18 +87,23 @@ describe('compare + rank', () => {
     expect(packs[0].site.id).toBe('malapert');
     expect(packs[2].site.id).toBe('connecting-ridge');
   });
-  it('rankSites ranks all 13, best Sun first, ranks 1..13', () => {
+  it('rankSites ranks all 14, best Sun first, ranks 1..14', () => {
     const ranked = rankSites(new Date('2026-11-24T14:53:00Z'));
-    expect(ranked).toHaveLength(13);
-    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(ranked).toHaveLength(14);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
     for (let i = 1; i < ranked.length; i++) {
       expect(ranked[i].sun.alt).toBeLessThanOrEqual(ranked[i - 1].sun.alt + 1e-9);
     }
+    // Apollo 15 is equatorial (26°N), so at full Moon its Sun sits far
+    // higher (+61.7°) than any south-pole site (max +5.5°) — it tops
+    // the ranking by geometry, not by Artemis relevance.
+    expect(ranked[0].site.id).toBe('apollo15');
+    expect(ranked[0].sun.alt).toBeCloseTo(61.7, 0);
     // At full Moon the sub-solar longitude sits opposite Slater Plain
     // (126°E), so Slater — not the most poleward site — has the lowest
     // Sun. Sun altitude depends on longitude, not just latitude.
-    expect(ranked[12].site.id).toBe('slater');
-    expect(ranked[12].sun.alt).toBeCloseTo(-0.26, 1);
+    expect(ranked[13].site.id).toBe('slater');
+    expect(ranked[13].sun.alt).toBeCloseTo(-0.26, 1);
   });
 });
 

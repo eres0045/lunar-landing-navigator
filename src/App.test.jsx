@@ -29,7 +29,7 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.getByText(/COMM rule \(flat-horizon geometry\)/)).toBeTruthy();
   });
 
-  it('site picker lists all 13 sites, grouped, with the extras labelled by type', () => {
+  it('site picker lists all 14 sites, grouped, with the extras labelled by type', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: /Peak Near Cabeus B/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Slater Plain/ })).toBeTruthy();
@@ -37,6 +37,10 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.getByRole('button', { name: /Shoemaker PSR/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Sverdrup PSR/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Faustini Rim A PSR/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Apollo 15 — Hadley Rille/ })).toBeTruthy();
+    expect(screen.getByText(/Apollo landing site/)).toBeTruthy();
+    // Apollo 15 is NORTHERN (26.13°N) — the picker must not label it °S.
+    expect(screen.getByText(/26\.1320°N/)).toBeTruthy();
     expect(screen.getByText(/Illumination-study spot/)).toBeTruthy();
     // 3 site buttons + the intro line ("labelled PSR centres / study spots").
     expect(screen.getAllByText(/PSR centre/).length).toBe(4);
@@ -133,11 +137,11 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.queryByRole('dialog', { name: 'Landing window finder' })).toBeNull();
   });
 
-  it('mission brief modal ranks all 13 sites for the chosen date', async () => {
+  it('mission brief modal ranks all 14 sites for the chosen date', async () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Open mission brief' }));
     const dialog = await screen.findByRole('dialog', { name: 'Mission brief' });
-    expect(within(dialog).getByText(/Mission brief — all 13 sites, 2026-11-14 12:00 UTC/)).toBeTruthy();
+    expect(within(dialog).getByText(/Mission brief — all 14 sites, 2026-11-14 12:00 UTC/)).toBeTruthy();
     for (const name of ['Malapert Massif', 'Slater Plain', 'Connecting Ridge CR1', 'de Gerlache Rim 2']) {
       expect(within(dialog).getByText(name)).toBeTruthy();
     }

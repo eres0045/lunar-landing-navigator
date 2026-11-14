@@ -2,7 +2,7 @@
  * App — Lunar Landing Site Navigator (NASA Space Apps 2026, CH-04).
  *
  * Full-screen 3D Moon south-pole scene with ONE transparent glass
- * control panel: site picker (13 published sites), date/time picker,
+ * control panel: site picker (13 published south-pole sites + Apollo 15), date/time picker,
  * live Sun/Earth positions + POWER / COMM verdicts, and four tools —
  * Compare, Window finder, Mission brief, Evidence. Same visual language
  * as the SPICA fire lab (dark space scene, glass panel, emerald accents),
@@ -130,8 +130,9 @@ export default function App() {
     : roverModelStatus === 'fallback'
       ? 'Rover model: code-built fallback — the real Apollo LRV failed to load.'
       : 'Rover model: loading real Apollo LRV… (code-built rover driving meanwhile)';
+  const extentKm = (((terrainStatus.halfSizeM ?? 600) * 2 / 1000).toFixed(2).replace(/0$/, '').replace(/\.$/, ''));
   const terrainLine = terrainStatus.state === 'loaded'
-    ? `Terrain: real LRO LOLA DEM, ${terrainStatus.resolutionM} m/px · relief ${Math.round(terrainStatus.reliefM)} m over the 1.2 km square`
+    ? `Terrain: real ${terrainStatus.sourceShort || 'LRO LOLA DEM'}, ${terrainStatus.resolutionM} m/px · relief ${Math.round(terrainStatus.reliefM)} m over the ${extentKm} km square${terrainStatus.texture ? ` · ${terrainStatus.texture.label}` : ''}`
     : terrainStatus.state === 'loading'
       ? 'Terrain: loading real LOLA DEM…'
       : 'Terrain: flat — DEM unavailable (smooth-sphere fallback)';
@@ -279,6 +280,7 @@ export default function App() {
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
             <span data-testid="drive-rover-model">{roverModelLine}</span>
             {' '}Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
+            {' '}Lighting: real Sun direction + DEM shadows; faint Earthshine fill; brightness adjusted for readability.
             {' '}Wheel dust and tracks are illustrative, not a regolith simulation.
           </p>
           <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
@@ -447,8 +449,8 @@ export default function App() {
               </button>
 
               {/* Site picker */}
-              <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Landing site — 13 published points</h3>
-              <p className="mt-1 text-[11px] leading-tight text-slate-400">Artemis III region centres (NASA Oct 2024). Extras are labelled PSR centres / study spots, not region centres.</p>
+              <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Landing site — 13 published points + Apollo 15</h3>
+              <p className="mt-1 text-[11px] leading-tight text-slate-400">Artemis III region centres (NASA Oct 2024). Extras are labelled PSR centres / study spots / Apollo site, not region centres.</p>
               <div className="mt-1.5 space-y-1">
                 {artemisSites.map((s) => (
                   <button
@@ -461,7 +463,7 @@ export default function App() {
                     }`}
                   >
                     {s.name}
-                    <span className="block text-xs font-normal text-slate-400">{fmt(Math.abs(s.lat), 3)}°S · {fmt(s.lon, 3)}°E · {TYPE_LABEL[s.type]}</span>
+                    <span className="block text-xs font-normal text-slate-400">{fmt(Math.abs(s.lat), 3)}°{s.lat < 0 ? 'S' : 'N'} · {fmt(s.lon, 3)}°E · {TYPE_LABEL[s.type]}</span>
                   </button>
                 ))}
               </div>
@@ -477,7 +479,7 @@ export default function App() {
                     }`}
                   >
                     {s.name}
-                    <span className="block text-xs font-normal text-slate-400">{fmt(Math.abs(s.lat), 4)}°S · {fmt(s.lon, 4)}°E · {TYPE_LABEL[s.type]}</span>
+                    <span className="block text-xs font-normal text-slate-400">{fmt(Math.abs(s.lat), 4)}°{s.lat < 0 ? 'S' : 'N'} · {fmt(s.lon, 4)}°E · {TYPE_LABEL[s.type]}</span>
                   </button>
                 ))}
               </div>
@@ -527,7 +529,7 @@ export default function App() {
               <button type="button" onClick={() => setCompareOpen(true)} aria-label="Open site comparison"
                 className="mt-3 block w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-left text-sm font-semibold text-sky-200 hover:border-sky-300">
                 🔭 Compare sites — side by side at this date
-                <span className="block text-xs font-normal text-slate-400">Sun / Earth / POWER / COMM for up to 13 sites</span>
+                <span className="block text-xs font-normal text-slate-400">Sun / Earth / POWER / COMM for up to 14 sites</span>
               </button>
               <button type="button" onClick={() => setWindowsOpen(true)} aria-label="Open landing window finder"
                 className="mt-2 block w-full rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-left text-sm font-semibold text-emerald-200 hover:border-emerald-300">
@@ -536,7 +538,7 @@ export default function App() {
               </button>
               <button type="button" onClick={() => setBriefOpen(true)} aria-label="Open mission brief"
                 className="mt-2 block w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left text-sm font-semibold text-amber-200 hover:border-amber-300">
-                📋 Mission brief — all 13 sites ranked for this date
+                📋 Mission brief — all 14 sites ranked for this date
                 <span className="block text-xs font-normal text-slate-400">Best Sun first, then best Earth — printable</span>
               </button>
               <button type="button" onClick={() => setEvidenceOpen(true)} aria-label="Open evidence"
@@ -548,8 +550,8 @@ export default function App() {
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{DISCLAIMER}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
                 Moon texture is illustrative; markers sit at the published coordinates on the sphere grid.
-                Drive terrain is the real LRO LOLA DEM (10–20 m/px, NASA public domain) — see Evidence.
-                No sub-10 m boulders or craters are resolved; the scattered drive-scene rocks are decorative, with no collision.
+                Drive terrain is real NASA elevation data (LOLA DEM 10–20 m/px; Apollo 15 NAC DTM 2 m/px) — see Evidence.
+                No sub-10 m boulders or craters are resolved at the south-pole sites (Apollo 15 terrain is 2 m/px); the scattered drive-scene rocks are decorative, with no collision.
                 LRO model: NASA, public domain. Moon texture: three.js example, NASA lunar imagery. Sun texture: Solar System Scope, CC BY 4.0. Earth: NASA Blue Marble.
                 Rover model: Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS — see Evidence.
               </p>
@@ -664,7 +666,7 @@ export default function App() {
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-3" role="dialog" aria-modal="true" aria-label="Mission brief">
           <div className="brief-print max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/20 bg-slate-900/95 p-4 shadow-2xl backdrop-blur-md">
             <div className="flex items-start justify-between gap-2">
-              <h2 className="text-base font-bold text-slate-100">Mission brief — all 13 sites, {formatDateUTC(date)}</h2>
+              <h2 className="text-base font-bold text-slate-100">Mission brief — all 14 sites, {formatDateUTC(date)}</h2>
               <button type="button" onClick={() => setBriefOpen(false)} aria-label="Close mission brief"
                 className="no-print shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕</button>
             </div>
