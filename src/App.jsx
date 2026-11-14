@@ -107,6 +107,11 @@ export default function App() {
   // these shared refs. The HUD polls the ref so the numbers update
   // without re-rendering the 3D scene.
   const [driveMode, setDriveMode] = useState(false);
+  // Mobile: the Drive HUD covers most of a phone screen, so it starts
+  // minimised on narrow viewports; desktop starts open.
+  const [hudCollapsed, setHudCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768,
+  );
   const [driveCam, setDriveCam] = useState('chase');
   const [maxSpeedKmh, setMaxSpeedKmh] = useState(LRV.topSpeedKmh);
   // Real LOLA DEM terrain for the selected site (loaded lazily by
@@ -274,9 +279,14 @@ export default function App() {
         <div data-testid="drive-hud" className="absolute right-3 top-12 z-20 w-[280px] rounded-2xl border border-white/20 bg-slate-900/85 p-3 shadow-2xl backdrop-blur-md">
           <div className="flex items-start justify-between gap-2">
             <h2 className="text-sm font-bold text-slate-100">🚀 Driving — {site.name}</h2>
+            <button type="button" onClick={() => setHudCollapsed((v) => !v)}
+              aria-label={hudCollapsed ? 'Expand drive panel' : 'Minimise drive panel'}
+              data-testid="drive-hud-toggle"
+              className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">{hudCollapsed ? '▸' : '▾'}</button>
             <button type="button" onClick={exitDrive} aria-label="Back to orbit"
               className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕ Back to orbit</button>
           </div>
+          {!hudCollapsed && (<>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
             <span data-testid="drive-rover-model">{roverModelLine}</span>
             {' '}Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
@@ -365,6 +375,7 @@ export default function App() {
           <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
             Keys: W/↑ forward · S/↓ reverse · A/D or ←/→ steer · Space brake · Esc exit.
           </p>
+          </>)}
         </div>
       )}
 

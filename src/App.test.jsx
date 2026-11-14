@@ -222,4 +222,18 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     fireEvent.click(toggle);
     expect(toggle.textContent).toContain('Driver cam');
   });
+
+  it('Drive mode: HUD minimise toggle hides the telemetry, expand brings it back', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    expect(screen.getByTestId('drive-speed')).toBeTruthy();
+    const toggle = screen.getByTestId('drive-hud-toggle');
+    expect(toggle.getAttribute('aria-label')).toBe('Minimise drive panel');
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('drive-speed')).toBeNull();
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+    expect(toggle.getAttribute('aria-label')).toBe('Expand drive panel');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('drive-speed')).toBeTruthy();
+  });
 });
