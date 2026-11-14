@@ -37,7 +37,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sunEarthAt } from '../lib/ephemeris.js';
 import { SITES } from '../lib/data.js';
 import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
-import { driveChaseCamera } from '../lib/driveCamera.js';
+import { driveChaseCamera, driveSteerSign } from '../lib/driveCamera.js';
 import { loadTerrainGrid, createTerrainLookup, textureStatusForSite } from '../lib/terrain.js';
 import { buildTerrainGeometry, terrainRingPoints, loadGroundTexture } from './terrainMesh.js';
 import { createRoverGroup, loadRealRover, driverCameraPose } from './RoverModel.jsx';
@@ -650,7 +650,13 @@ export default function LunarScene({
         const rover = roverStateRef?.current;
         const input = driveInputRef?.current || {};
         if (rover) {
-          roverStep(rover, input, dt);
+          // Screen-relative steering in chase cam: when the driver has
+          // orbited the camera to the front, the rover's own right is
+          // the screen's left, so flip steer to keep RIGHT turning
+          // toward the screen's right. Throttle/reverse/brake are
+          // untouched; the flip covers buttons AND keyboard (same ref).
+          const steerSign = driveSteerSign(driveOrbitRef?.current?.theta ?? 0, driveCam);
+          roverStep(rover, { ...input, steer: (input.steer ?? 0) * steerSign }, dt);
           // A new site means new terrain — the old trail belongs to
           // the previous site's ground, so drop it.
           if (rover.siteId !== lastTrackSiteId) {

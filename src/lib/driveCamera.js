@@ -34,6 +34,27 @@ export const DRIVE_CAM = {
 
 export const DEFAULT_DRIVE_ORBIT = { theta: 0, elevM: 0, distM: 0 };
 
+/**
+ * Screen-relative steering sign for Drive mode.
+ *
+ * The on-screen buttons (and the keyboard) steer the ROVER: +1 turns
+ * it to its own right. In the default chase view the camera sits
+ * behind the rover, so the rover's right IS the screen's right and
+ * the sign is +1. But once the driver orbits the camera past 90° to
+ * the front, the rover's right is the screen's LEFT — the buttons
+ * feel inverted. Flipping the steer sign when cos(theta) < 0 keeps
+ * RIGHT always turning the rover toward the right side of the
+ * screen. Driver cam is first-person, so it never flips.
+ *
+ * theta: chase-cam azimuth offset from behind, rad.
+ * cam: 'chase' | 'driver'.
+ * Returns 1 (normal) or -1 (flipped).
+ */
+export function driveSteerSign(theta, cam) {
+  if (cam === 'driver') return 1;
+  return Math.cos(theta ?? 0) >= 0 ? 1 : -1;
+}
+
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }

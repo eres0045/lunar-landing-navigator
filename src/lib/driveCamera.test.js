@@ -3,7 +3,7 @@
  * theta = 0 must reproduce the original fixed chase framing exactly.
  */
 import { describe, it, expect } from 'vitest';
-import { DRIVE_CAM, DEFAULT_DRIVE_ORBIT, driveChaseCamera } from './driveCamera.js';
+import { DRIVE_CAM, DEFAULT_DRIVE_ORBIT, driveChaseCamera, driveSteerSign } from './driveCamera.js';
 
 const POS = { x: 10, y: 5, z: -20 };
 
@@ -67,5 +67,29 @@ describe('driveChaseCamera', () => {
     const a = driveChaseCamera(POS, 0);
     const b = driveChaseCamera(POS, 0, DEFAULT_DRIVE_ORBIT);
     expect(a).toEqual(b);
+  });
+});
+
+describe('driveSteerSign', () => {
+  it('theta = 0 (camera behind) → normal steering', () => {
+    expect(driveSteerSign(0, 'chase')).toBe(1);
+  });
+
+  it('theta = π (camera in front) → flipped steering', () => {
+    expect(driveSteerSign(Math.PI, 'chase')).toBe(-1);
+  });
+
+  it('theta = 2.5 rad (front-ish) → flipped steering', () => {
+    expect(driveSteerSign(2.5, 'chase')).toBe(-1);
+  });
+
+  it('theta = π/2 (side view, cos ≈ 0) → no flip', () => {
+    expect(driveSteerSign(Math.PI / 2, 'chase')).toBe(1);
+  });
+
+  it('driver cam never flips, for any theta', () => {
+    expect(driveSteerSign(0, 'driver')).toBe(1);
+    expect(driveSteerSign(Math.PI, 'driver')).toBe(1);
+    expect(driveSteerSign(2.5, 'driver')).toBe(1);
   });
 });
