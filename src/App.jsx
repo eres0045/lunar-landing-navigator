@@ -11,7 +11,19 @@
  * All numbers come from src/lib/data.js + src/lib/ephemeris.js
  * (astronomy-engine + IAU lunar rotation model, ±0.1° geometry,
  * flat horizon — no terrain shadowing). Nothing is invented.
+ *
+ * Boot: the app opens DIRECTLY in Drive mode (rover driving view) at
+ * the default site/date. `?view=orbit` in the URL boots the orbit
+ * overview instead. "Back to orbit" in the Drive HUD (or Esc) exits
+ * Drive mode back to the navigator, where Compare / Windows / Brief /
+ * Evidence are one tap away.
  */
+/** Boot view from the URL query: `?view=orbit` opens the orbit
+ *  overview; anything else (including no query) boots Drive mode. */
+export function bootViewFromSearch(search) {
+  const params = new URLSearchParams(search || '');
+  return params.get('view') === 'orbit' ? 'orbit' : 'drive';
+}
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   SITES, TYPE_LABEL, getSite, fmt, fmtSigned, siteVerdict,
@@ -107,7 +119,12 @@ export default function App() {
   // group); App owns the input + HUD and reads the live state through
   // these shared refs. The HUD polls the ref so the numbers update
   // without re-rendering the 3D scene.
-  const [driveMode, setDriveMode] = useState(false);
+  // Boot: Drive mode by default (rover driving view), unless the URL
+  // says ?view=orbit. LunarScene (re)creates the rover when Drive mode
+  // is on, so booting into Drive needs no extra setup here.
+  const [driveMode, setDriveMode] = useState(
+    () => bootViewFromSearch(typeof window === 'undefined' ? '' : window.location.search) === 'drive',
+  );
   // Mobile: the Drive HUD covers most of a phone screen, so it starts
   // minimised on narrow viewports; desktop starts open.
   const [hudCollapsed, setHudCollapsed] = useState(

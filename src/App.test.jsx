@@ -6,11 +6,17 @@
  * here. Ephemeris MATH is asserted in src/lib/ephemeris.test.js and
  * src/lib/data.test.js; these tests assert the UI shows those values.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import App from './App.jsx';
+import App, { bootViewFromSearch } from './App.jsx';
 
 describe('App — lunar navigator (jsdom has no WebGL)', () => {
+  // These tests were written assuming the orbit overview on load, so
+  // they boot with the ?view=orbit override. The default (Drive boot)
+  // is covered by the 'App boot' block below.
+  beforeEach(() => {
+    window.history.pushState({}, '', '/?view=orbit');
+  });
   it('renders the title chip, the panel and the Malapert Nov 14 verdict line on load', () => {
     render(<App />);
     expect(screen.getByText('🌙 Lunar Landing Site Navigator')).toBeTruthy();
@@ -265,5 +271,68 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(reset.textContent).toContain('Reset view');
     fireEvent.click(reset);
     expect(screen.getByTestId('drive-hud')).toBeTruthy();
+  });
+});
+
+describe('App boot — Drive mode by default (?view=orbit for the overview)', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('bootViewFromSearch: orbit only on ?view=orbit, drive otherwise', () => {
+    expect(bootViewFromSearch('')).toBe('drive');
+    expect(bootViewFromSearch('?view=drive')).toBe('drive');
+    expect(bootViewFromSearch('?view=orbit')).toBe('orbit');
+    expect(bootViewFromSearch('?view=foo')).toBe('drive');
+    expect(bootViewFromSearch('?site=malapert&view=orbit')).toBe('orbit');
+  });
+
+  it('default boot (no query) opens Drive mode with live rover state', () => {
+    render(<App />);
+    const hud = screen.getByTestId('drive-hud');
+    expect(hud).toBeTruthy();
+    // jsdom viewport is 1024 wide, so the HUD starts expanded here.
+    expect(screen.getByTestId('drive-speed').textContent).toContain('0.0 km/h');
+    expect(screen.getByTestId('drive-heading').textContent).toContain('0.0°');
+    expect(screen.getByTestId('drive-lat').textContent).toContain('-85.9900°');
+    expect(screen.getByTestId('drive-lon').textContent).toContain('-0.1250°');
+    expect(screen.getByTestId('drive-touch-controls')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-forward')).toBeTruthy();
+    // The navigator panel is still there underneath.
+    expect(screen.getByText('🌙 Navigator')).toBeTruthy();
+  });
+
+  it('?view=orbit boots the orbit overview (no Drive HUD)', () => {
+    window.history.pushState({}, '', '/?view=orbit');
+    render(<App />);
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+    expect(screen.queryByTestId('drive-touch-controls')).toBeNull();
+    expect(screen.getByText('🌙 Navigator')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Drive on the surface' })).toBeTruthy();
+  });
+
+  it('?view=drive boots Drive mode, same as no query', () => {
+    window.history.pushState({}, '', '/?view=drive');
+    render(<App />);
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+    expect(screen.getByTestId('drive-touch-controls')).toBeTruthy();
+  });
+
+  it('from ?view=orbit, the Drive entry button still enters Drive mode', () => {
+    window.history.pushState({}, '', '/?view=orbit');
+    render(<App />);
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+  });
+
+  it('from a Drive boot, Back to orbit exits and site comparison is one tap away', async () => {
+    render(<App />);
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exit drive mode' }));
+    expect(screen.queryByTestId('drive-hud')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open site comparison' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Compare sites' });
+    expect(within(dialog).getByText(/Compare sites — 2026-11-14 12:00 UTC/)).toBeTruthy();
   });
 });
