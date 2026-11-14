@@ -21,18 +21,30 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     render(<App />);
     expect(screen.getByText('🌙 Lunar Landing Site Navigator')).toBeTruthy();
     expect(screen.getByText('🌙 Navigator')).toBeTruthy();
-    // Default: Malapert, Nov 14 12:00 UTC — Sun −0.49° LOW SUN, Earth +0.13° VISIBLE.
+    // Default: Malapert, Nov 14 12:00 UTC — terrain-aware: Sun −0.49°
+    // vs +2.65° local horizon = DARK, Earth +0.13° vs +3.80° = BELOW
+    // HORIZON (the flat rule used to say LOW SUN + VISIBLE).
     expect(screen.getByText(/Malapert Massif · 2026-11-14 12:00 UTC/)).toBeTruthy();
-    // LOW SUN / VISIBLE appear twice: the verdict line and the badge.
-    expect(screen.getAllByText(/LOW SUN/).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText(/VISIBLE/).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/−0\.49°/)).toBeTruthy();
+    // DARK / BELOW HORIZON appear twice: the verdict line and the badge.
+    expect(screen.getAllByText(/DARK/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/BELOW HORIZON/).length).toBeGreaterThanOrEqual(2);
+    // −0.49° appears in the Sun line AND in the terrain-aware detail
+    // ("Sun −0.49° is more than 2° below the local horizon…").
+    expect(screen.getAllByText(/−0\.49°/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/The 3D Moon scene needs WebGL/)).toBeTruthy();
-    // The flat-horizon caveat is always visible.
+    // The planning-aid disclaimer is always visible.
     expect(screen.getByText(/Planning aid only, not for flight decisions\./)).toBeTruthy();
-    // The verdict rules are stated plainly.
-    expect(screen.getByText(/POWER rule \(flat-horizon geometry\)/)).toBeTruthy();
-    expect(screen.getByText(/COMM rule \(flat-horizon geometry\)/)).toBeTruthy();
+    // The verdict rules are stated plainly (terrain-aware horizon since Step 3).
+    expect(screen.getByText(/POWER rule \(terrain-aware horizon from the real LOLA DEM/)).toBeTruthy();
+    expect(screen.getByText(/COMM rule \(terrain-aware horizon from the real LOLA DEM/)).toBeTruthy();
+  });
+
+  it('terrain-aware by default: the panel states the local horizon degrees behind each verdict', () => {
+    render(<App />);
+    // Power detail: Sun −0.49° more than 2° below the +2.65° local horizon.
+    expect(screen.getByText(/more than 2° below the local horizon \(\+2\.65° at az \+121°\)/)).toBeTruthy();
+    // Comm detail: Earth +0.13° at or below the +3.80° local horizon.
+    expect(screen.getByText(/at or below the local horizon \(\+3\.80° at az \+358°\)/)).toBeTruthy();
   });
 
   it('site picker lists all 14 sites, grouped, with the extras labelled by type', () => {
@@ -57,24 +69,29 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Full Moon · Nov 24 14:53 UTC/ }));
     expect(screen.getByText(/Malapert Massif · 2026-11-24 14:53 UTC/)).toBeTruthy();
     expect(screen.getAllByText(/SUNLIT/).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/\+5\.53°/)).toBeTruthy();
+    // +5.53° appears in the Sun line AND in the terrain-aware detail.
+    expect(screen.getAllByText(/\+5\.53°/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/99\.8%/)).toBeTruthy();
   });
 
-  it('switching to Connecting Ridge shows SUNLIT + BELOW HORIZON and the published 88.1% figure', () => {
+  it('switching to Connecting Ridge shows DARK + BELOW HORIZON and the published 88.1% figure', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Connecting Ridge CR1/ }));
     expect(screen.getByText(/Connecting Ridge CR1 · 2026-11-14 12:00 UTC/)).toBeTruthy();
-    expect(screen.getAllByText(/SUNLIT/).length).toBeGreaterThanOrEqual(2);
+    // Terrain-aware: Sun +1.44° vs +4.97° local horizon = DARK
+    // (the flat rule said SUNLIT); Earth stays BELOW HORIZON.
+    expect(screen.getAllByText(/DARK/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText(/BELOW HORIZON/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/88\.1% illuminated at 2 m/)).toBeTruthy();
     expect(screen.getByText(/92\.5% at 10 m/)).toBeTruthy();
   });
 
-  it('new-Moon chip: Malapert DARK, Moon 0.2% illuminated', () => {
+  it('new-Moon chip: Malapert SUNLIT against the terrain horizon, Moon 0.2% illuminated', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /New Moon · Nov 9 07:02 UTC/ }));
-    expect(screen.getAllByText(/DARK/).length).toBeGreaterThanOrEqual(2);
+    // Sun −2.46° sits ABOVE the −4.10° local horizon to the south,
+    // so the terrain-aware verdict is SUNLIT (flat said DARK).
+    expect(screen.getAllByText(/SUNLIT/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/0\.2%/)).toBeTruthy();
   });
 
@@ -97,7 +114,7 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse navigator controls' }));
     expect(screen.queryByLabelText('Date and time (UTC)')).toBeNull();
     expect(screen.queryByRole('button', { name: /Slater Plain/ })).toBeNull();
-    expect(screen.getByText(/LOW SUN/)).toBeTruthy();
+    expect(screen.getByText(/DARK/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Expand navigator controls' }));
     expect(screen.getByLabelText('Date and time (UTC)')).toBeTruthy();
   });
@@ -106,7 +123,7 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Hide navigator panel' }));
     expect(screen.queryByLabelText('Date and time (UTC)')).toBeNull();
-    expect(screen.queryByText(/LOW SUN/)).toBeNull();
+    expect(screen.queryByText(/DARK/)).toBeNull();
     expect(screen.getByText('🌙 Lunar Landing Site Navigator')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Show navigator controls' }));
     expect(screen.getByLabelText('Date and time (UTC)')).toBeTruthy();
@@ -122,9 +139,16 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(within(dialog).getAllByText('Malapert Massif').length).toBe(2);
     expect(within(dialog).getAllByText('Connecting Ridge CR1').length).toBe(2);
     expect(within(dialog).getAllByText('Slater Plain').length).toBe(2);
-    // Malapert row: LOW SUN + VISIBLE; CR1 row: SUNLIT + BELOW HORIZON.
+    // Terrain-aware rows at Nov 14: Malapert DARK + BELOW HORIZON,
+    // CR1 DARK + BELOW HORIZON, Slater DARK + BELOW HORIZON,
+    // de Gerlache Rim 2 DARK + VISIBLE (its Earth horizon dips).
     const rows = within(dialog).getAllByRole('row');
     expect(rows.length).toBeGreaterThanOrEqual(5); // header + 4 sites
+    expect(within(dialog).getAllByText('DARK')).toHaveLength(4);
+    expect(within(dialog).getAllByText('BELOW HORIZON')).toHaveLength(3);
+    expect(within(dialog).getAllByText('VISIBLE')).toHaveLength(1);
+    // The compare copy states the real local horizon, not flat.
+    expect(within(dialog).getByText(/real local horizon from the LOLA DEM/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close site comparison' }));
     expect(screen.queryByRole('dialog', { name: 'Compare sites' })).toBeNull();
   });
@@ -137,6 +161,14 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(within(dialog).getByText(/Longest continuous SUNLIT stretch:/)).toBeTruthy();
     expect(within(dialog).getByText(/Longest continuous Earth-VISIBLE stretch:/)).toBeTruthy();
     expect(within(dialog).getByText(/Best days — ranked by Sun-lit hours/)).toBeTruthy();
+    // Terrain-aware totals for Malapert, 14 days from Nov 14 12:00 UTC
+    // (the app's start instant): 148 Sun-lit h · 270 Earth-visible h
+    // of 336 h (flat was 308/326; a 00:00 start gives 136/258).
+    expect(within(dialog).getByText(/148 Sun-lit h/)).toBeTruthy();
+    expect(within(dialog).getByText(/270 Earth-visible h/)).toBeTruthy();
+    // The intro line (and the disclaimer below) state the real local
+    // horizon — getAllByText because the phrase appears twice.
+    expect(within(dialog).getAllByText(/real local horizon from the LOLA DEM/).length).toBeGreaterThanOrEqual(1);
     // 30-day toggle exists.
     expect(within(dialog).getByRole('button', { name: '30 days' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close landing window finder' }));
@@ -151,6 +183,12 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     for (const name of ['Malapert Massif', 'Slater Plain', 'Connecting Ridge CR1', 'de Gerlache Rim 2']) {
       expect(within(dialog).getByText(name)).toBeTruthy();
     }
+    // Terrain-aware ranking at Nov 14: Nobile Rim 1 is rank 1 (Sun
+    // margin +14.27° above its local horizon), Apollo 15 rank 14.
+    const rows = within(dialog).getAllByRole('row');
+    expect(rows[1].textContent).toMatch(/Nobile Rim 1/);
+    expect(rows[1].textContent).toMatch(/SUNLIT/);
+    expect(within(dialog).getByText(/Sun margin above the local horizon/)).toBeTruthy();
     expect(within(dialog).getByText(/88\.1% illuminated over 20 years/)).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Print mission brief' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close mission brief' }));
@@ -170,6 +208,41 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(within(dialog).getByText(/Planning aid only, not for flight decisions\./)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close evidence' }));
     expect(screen.queryByRole('dialog', { name: 'Evidence' })).toBeNull();
+  });
+
+  it('evidence modal shows the Sun-path chart over the real horizon (Nov 14: Sun never rises)', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
+    const chart = within(dialog).getByTestId('horizon-chart');
+    expect(chart).toBeTruthy();
+    expect(within(dialog).getByText(/real LOLA DEM horizon \(range 9990 m, 2 m eye\)/)).toBeTruthy();
+    expect(within(dialog).getByText(/Sun stays below the horizon all day — no rise\/set\./)).toBeTruthy();
+    expect(chart.getAttribute('aria-label')).toMatch(/Sun and Earth paths over the real horizon at Malapert Massif on 2026-11-14/);
+  });
+
+  it('evidence modal shows the CR1 validation badge (computed 80.2% vs published 88.1%)', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
+    const badge = within(dialog).getByTestId('cr1-validation-badge');
+    expect(badge.textContent).toMatch(/Computed 80\.2% Sun-up over 18\.6 years/);
+    expect(badge.textContent).toMatch(/2026-01-01 → 2044-08-07/);
+    expect(badge.textContent).toMatch(/vs published 88\.1% over 20 years/);
+    expect(badge.textContent).toMatch(/different windows and methods; a check, not an equality claim/);
+    expect(badge.textContent).toMatch(/7\.9-point gap/);
+    expect(badge.textContent).toMatch(/652\/721 h/);
+  });
+
+  it('evidence chart shows the Nov 22 sunrise crossing at Malapert', async () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Date and time (UTC)'), { target: { value: '2026-11-22T12:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open evidence' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Evidence' });
+    expect(within(dialog).getByText(/Evidence — Malapert Massif · 2026-11-22 12:00 UTC/)).toBeTruthy();
+    const chart = within(dialog).getByTestId('horizon-chart');
+    expect(chart.getAttribute('aria-label')).toMatch(/rise 07:5\d UTC/);
+    expect(within(dialog).getByText(/rise 07:5\d UTC \(az \d+°\)/)).toBeTruthy();
   });
 
   it('Esc closes the Evidence modal', async () => {
@@ -194,9 +267,18 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.getByTestId('drive-distance').textContent).toContain('0.0 m');
     // Rover-model status line: jsdom has no WebGL, so the scene never
     // reports back and the HUD honestly says the real model is still
-    // loading (code-built rover driving meanwhile).
+    // loading (rover appears when ready — no stand-in is mounted).
     expect(screen.getByTestId('drive-rover-model').textContent)
       .toContain('Rover model: loading real Apollo LRV…');
+    // Terrain-aware Drive verdicts at the landing point: Malapert
+    // Nov 14 is DARK + BELOW HORIZON, with the local horizon degrees
+    // shown and the landing-point approximation stated, not hidden.
+    expect(screen.getByTestId('drive-power').textContent).toContain('DARK');
+    expect(screen.getByTestId('drive-comm').textContent).toContain('BELOW HORIZON');
+    expect(screen.getByTestId('drive-sun-horizon').textContent).toContain('+2.65°');
+    expect(screen.getByTestId('drive-earth-horizon').textContent).toContain('+3.80°');
+    expect(within(hud).getByText(/measured at the landing point/)).toBeTruthy();
+    expect(within(hud).getByText(/approximation of the rover.s own horizon/)).toBeTruthy();
     // The illustrative-effects label is stated in the HUD.
     expect(within(hud).getByText(/Wheel dust and tracks are illustrative, not a regolith simulation\./)).toBeTruthy();
     // Camera toggle + max-speed control + touch buttons exist.

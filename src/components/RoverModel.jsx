@@ -10,8 +10,9 @@
  * The CODE-BUILT rover below (three.js primitives, modelled on the
  * Apollo LRV's REAL published dimensions — src/lib/rover.js LRV, NASA
  * NSSDCA + Boeing LRV Operations Handbook; cited per-dimension in
- * ROVER.md) remains as the fallback: it drives while the GLB loads,
- * and permanently if the GLB fails to load or is missing a pivot.
+ * ROVER.md) remains as the fallback: it is mounted only if the GLB
+ * fails to load or is missing a pivot — never while the GLB loads
+ * (Step 3: the stand-in used to flash on cold load).
  *
  * Model space (both rovers): forward = +Z, up = +Y, metres. Wheel
  * centres sit at ±track/2 in X and ±wheelbase/2 in Z; wheel radius =
@@ -257,22 +258,60 @@ export function resetRealRoverCache() {
 
 /**
  * Driver-camera pose for Drive mode, measured against the REAL GLB
- * (not the code-built rover): the high-gain dish sits on the rover's
- * LEFT side (x +0.16…+0.91 m, front face z ≈ +1.55 m, mast top
- * y ≈ 1.86 m — measured from the shipped GLB; see the RoverModel
- * tests, which assert these bounds from the file itself). A centred
- * camera ahead of the dish (the first attempt: 2.3 m ahead, 1.9 m
- * up) clears the dish but sees NO rover at all — it floats in front
- * of the vehicle like a drone. So the camera instead sits in the
- * driver's seat on the OPPOSITE side from the dish: 0.6 m to the
- * right of centre (the right seat, outer edge), 0.65 m ahead of the
- * centre, eye height 1.45 m — every corner of the dish's bounding
- * box is then 40°+ off the forward axis, outside the ~37°
- * horizontal half-field of view, while the front fenders/wheels and
- * the control console sit at the bottom of the frame: a driver's
- * view over the rover's front. It also clears the code-built
- * rover's centred dish well enough (edge of frame at worst — that
- * rover only appears if the GLB fails to load).
+ * (not the code-built rover) — computed, not guessed (2026-11-15,
+ * reworked after the first pose failed live):
+ * the high-gain dish sits on the rover's LEFT side (x +0.16…+0.91 m,
+ * front face z ≈ +1.55 m, mast top y ≈ 1.86 m — measured from the
+ * shipped GLB; see the RoverModel tests, which assert these bounds
+ * from the file itself). Sign convention, verified from the GLB's own
+ * node names (`cover_R_F` / `wheel_fr` sit at −X): forward is +Z, so
+ * the rover's RIGHT side is −X and the right (driver's) seat is at
+ * negative x. A camera at +0.6 would sit on the DISH side.
+ *
+ * LESSON (2026-11-15): a bounding-box corner is NOT a surface point.
+ * The first rework posed the camera from the fender's bbox corner
+ * (−0.77, 0.81, 1.57 → NDC 0.46, −0.81, "bottom quarter"), but that
+ * corner is a phantom — no fender vertex is there. The real fender
+ * vertices sit 30–45° below horizontal from the seat, outside the
+ * 25° vertical half-FOV, so the whole fender/wheel/body projected to
+ * ZERO clipped screen area and the live driver view showed no rover
+ * at all. The correct metric is the CLIPPED screen area of the
+ * actual vertices (clip-space Sutherland–Hodgman, never NDC-space:
+ * vertices behind the camera mirror in NDC and fabricate phantom
+ * area). The pose below is the result of that vertex-based search.
+ *
+ * The old pose (−0.7, 1.2, 0.6), look 30 m ahead at 0.6 m up, has
+ * ZERO clipped visible area for every front part (fenders, wheels,
+ * body) on a 390×844 phone — the camera was 0.6 m ahead of centre,
+ * only 0.13–0.97 m from the fender, so the fender's vertices splayed
+ * to extreme NDC and were all clipped. Moving the eye back to the
+ * seat (forward 0.0 m, i.e. the rover centre, where the seat sits)
+ * and pitching down puts the front in frame.
+ *
+ * Chosen pose (−0.75, 1.2, 0.0), look 30 m ahead at −2.0 m up
+ * (a 6.1° downward pitch; the look target is below the terrain — it
+ * is a direction, not a point on the ground):
+ *  - eye 1.2 m (a seated astronaut's eye height: seat 0.56 m +
+ *    ~0.65 m), at the outer edge of the right seat (seat spans
+ *    x −0.73…−0.11 m; −0.75 sits just at that edge);
+ *  - right-front fender + right-front wheel clipped visible area
+ *    4.08 NDC² on a 390×844 phone (frame = 4 NDC²), dish 0 vertices
+ *    in frame on phone — the dish is completely clear;
+ *  - live phone probe: ~34k rover pixels, 89% in the bottom quarter,
+ *    all on the right half (the driver's-side front), 0 in the top
+ *    third — the front reads at the bottom of the frame and the
+ *    forward terrain fills the top;
+ *  - on a wide desktop frame the dish's inner edge intrudes at the
+ *    TOP-LEFT edge only (34 vertices in frame at 16:9, NDC x
+ *    −0.97…−0.75, y 0.30…0.93) — at the frame edge, never central —
+ *    and the front is visible there too (1.38 NDC²).
+ * It also roughly clears the code-built rover's centred dish: the
+ * dish centre is off-frame on phone (NDC −4.51) and desktop
+ * (−1.30); only the disc's lower edge can intrude at the left edge
+ * of a wide desktop frame (closest sampled point NDC −0.81 at
+ * 16:10, −0.73 at 16:9) — never central — and its front-right
+ * fender lands in the lower half (NDC y −0.41). That rover only
+ * appears if the GLB fails to load.
  *
  * Returns `{ camera, lookAt }` as new THREE.Vector3s; `roverPos` is
  * never mutated. `headingRad` is clockwise from north (0 = north),
@@ -282,15 +321,15 @@ export function resetRealRoverCache() {
  */
 export const DRIVER_CAM = {
   /** Metres to the right of the rover centre (negative = opposite the dish). */
-  lateralM: -0.6,
-  /** Metres ahead of the rover centre (driver's seat / console). */
-  forwardM: 0.65,
+  lateralM: -0.75,
+  /** Metres ahead of the rover centre (0 = the seat, at the rover centre). */
+  forwardM: 0.0,
   /** Camera (eye) height above the ground. */
-  heightM: 1.45,
+  heightM: 1.2,
   /** Look target: metres ahead of the rover centre. */
   lookAheadM: 30,
-  /** Look target height above the ground. */
-  lookHeightM: 0.6,
+  /** Look target height above the ground (below the terrain: a 6.1° downward pitch). */
+  lookHeightM: -2.0,
 };
 
 export function driverCameraPose(roverPos, headingRad) {

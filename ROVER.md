@@ -5,8 +5,14 @@ you drive a rover across it. The rover is the **real Apollo LRV mesh** —
 the Deutsches Museum "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, converted
 from the NASA Space ROS COLLADA files to a decimated GLB (pipeline below).
 The **code-built rover** (three.js primitives, same published dimensions)
-remains as the fallback: it drives while the GLB loads, and permanently
-if the GLB fails to load or is missing a pivot.
+remains as the fallback: it is mounted ONLY if the GLB fails to load or
+is missing a pivot. It no longer drives while the GLB loads (Step 3,
+2026-11-15): on a cold load into Drive mode — the default boot — the
+stand-in flashed on screen for ~2 s before the swap, its big centred
+dish filling the chase view (live probe, `step3-live-early-canvas.png`).
+While the GLB loads, no rover is shown; the terrain, sky, HUD and the
+drive camera (which follows the physics state, not the mesh) stay live,
+and the rover appears the moment its model is ready.
 
 ## Apollo LRV dimensions — verified published figures
 
@@ -77,38 +83,86 @@ handbook's precise wheelbase/track, and says so above.
 - **Swap-in:** `loadRealRover(url)` in `RoverModel.jsx` loads the GLB
   and `wireRealRover(scene)` wires it into the `{ group, wheels,
   steerGroups }` shape the animation loop already uses — no physics,
-  HUD, terrain, or control changes. `LunarScene.jsx` starts with the
-  code-built rover, swaps the GLB in when it arrives, and keeps the
-  code-built rover on ANY failure (404, corrupt file, network error,
-  or a missing node — `wireRealRover` throws naming the node). The
-  swap is guarded if Drive mode is exited before the load finishes.
-- **Preload (2026-11-14):** the fetch starts on app mount, not on
+  HUD, terrain, or control changes. `LunarScene.jsx` mounts NO rover
+  until a model is ready — the real GLB when it arrives, the code-built
+  rover only on ANY failure (404, corrupt file, network error, or a
+  missing node — `wireRealRover` throws naming the node). The mount is
+  guarded if Drive mode is exited before the load finishes.
+- **Preload (2026-11-14) + no-flash fix (Step 3, 2026-11-15):** the fetch starts on app mount, not on
   Drive entry — `App.jsx` calls `preloadRealRover(url)`, which caches
   the load promise per URL, so by the time the user opens Drive mode
-  the 6.4 MB GLB is usually parsed and the swap already happened; the
-  code-built rover no longer flashes on first entry. `loadRealRover`
+  from orbit view the 6.4 MB GLB is usually parsed. On a COLD load the
+  default boot IS Drive mode, so there is no orbit dwell time: the GLB
+  still takes ~3–4 s (live probe: requested 2.7 s, done 4.3 s after
+  navigation start), and the old code-built stand-in was visible for
+  that window. Since Step 3 no rover at all is mounted while loading —
+  the code-built rover mounts only on load failure — so the stand-in
+  never flashes. `loadRealRover`
   reuses the same cached promise, so re-mounts never re-fetch. The
   HUD reports the model state (`drive-rover-model`): loading / real /
-  fallback — the stand-in is never shown silently.
-- **Driver cam (2026-11-14):** the first driver cam (1.6 m ahead,
+  fallback — no rover is ever shown silently as the wrong model.
+- **Driver cam (2026-11-14, reworked twice 2026-11-15):** the first driver cam (1.6 m ahead,
   1.5 m up) sat 5 cm in front of the dish and below its top, so the
   dish filled the frame. Measured from the shipped GLB: dish front
   face z ≈ +1.55 m, mast top y ≈ 1.86 m, dish on the rover's LEFT
-  (x +0.16…+0.91 m). A centred camera past the dish (2.3 m ahead,
-  1.9 m up) cleared it but saw no rover at all — a drone view, not a
-  driver's view — so `driverCameraPose()` in `RoverModel.jsx` now
-  sits the camera in the driver's seat on the OPPOSITE side from the
-  dish: 0.6 m right of centre, 0.65 m ahead, eye height 1.45 m,
-  looking 30 m ahead at 0.6 m up. Every corner of the dish's
-  bounding box is 40°+ off the forward axis (horizontal half-FOV
-  ~37°), while the front fenders/wheels and console sit at the
-  bottom of the frame. The same pose roughly clears the code-built
-  rover's centred dish (edge of frame at worst). Tests assert the
-  pose against the shipped GLB's own dish bounding box. The
-  chase↔driver toggle also SNAPS the camera to the new pose instead
+  (x +0.16…+0.91 m — and the GLB's own node names confirm the sign:
+  `cover_R_F` / `wheel_fr` sit at −X, so with forward +Z the rover's
+  RIGHT side is −X; a camera at +0.6 would sit on the dish side).
+  The second pose (0.6 m right of centre, 0.65 m ahead, eye 1.45 m)
+  cleared the dish but saw NO rover at all — every front-fender /
+  wheel top point projected to NDC y ≈ −1.4, below the frame bottom
+  (live screenshots `step3-live-driver-lowsun2.png` /
+  `step3-live-driver-highsun2.png`). The ROVER.md claim written for
+  that pose — "the front fenders/wheels and console sit at the bottom
+  of the frame" — was FALSE and is struck here. A high eye "looking
+  over the dish" (e.g. +0.6, 1.95, 0.9) is worse, not better: it
+  puts the dish's top corner INSIDE a desktop frame (NDC −0.68) and
+  still shows no fender.
+- **Driver cam, second rework (2026-11-15):** the first rework's pose
+  (−0.7, 1.2, 0.6), look 30 m ahead at 0.6 m up, was chosen from the
+  fender's bounding-box corner (−0.77, 0.81, 1.57 → NDC 0.46, −0.81,
+  "bottom quarter") — but that corner is a phantom point: no fender
+  vertex is there. The real fender vertices sit 30–45° below
+  horizontal from the seat, outside the 25° vertical half-FOV, so
+  the whole fender / wheel / body projected to ZERO clipped screen
+  area and the live driver view (phone, Malapert low-Sun and Apollo 15
+  high-Sun) showed no rover at all — confirmed three independent ways:
+  clip-space projected area, a raycast that hits the fender at 0.6 m
+  while the framebuffer at its screen spot reads ground colour, and
+  a green marker box / torus / sphere placed at the same spot rendering
+  fine (so it is the pose, not the renderer, materials, or geometry).
+  The correct metric is the CLIPPED screen area of the actual vertices
+  (clip-space Sutherland–Hodgman; NDC-space clipping fabricates phantom
+  area from vertices behind the camera). Vertex-area search
+  (`scripts/_pose-vertex.mjs`) shows the eye must sit AT the seat,
+  not 0.6 m ahead of it: at 0.6 m the fender is 0.13–0.97 m away and
+  every real vertex is clipped. `driverCameraPose()` in `RoverModel.jsx`
+  now uses (−0.75, 1.2, 0.0), look 30 m ahead at −2.0 m up (a 6.1°
+  downward pitch; the look target is below the terrain — it is a
+  direction, not a ground point): eye 1.2 m (a seated astronaut: seat
+  0.56 m + ~0.65 m), at the outer edge of the right seat (seat spans
+  x −0.73…−0.11 m). On a 390×844 phone the right-front fender +
+  right-front wheel have 4.08 NDC² of clipped visible area (frame =
+  4 NDC²) and the dish has 0 vertices in frame — completely clear.
+  Live phone probe: ~34k rover pixels, 89% in the bottom quarter,
+  all on the right half (the driver's-side front), 0 in the top third.
+  The left (far-side) fender stays off-frame. On a wide desktop frame
+  the dish's inner edge intrudes at the TOP-LEFT edge only (34 vertices
+  in frame at 16:9, NDC x −0.97…−0.75, y 0.30…0.93) — at the frame
+  edge, never central — and the front is visible there too (1.38 NDC²).
+  The same pose roughly clears the code-built rover's centred dish:
+  its centre is off-frame on phone and at the top-left edge on desktop
+  (max|NDC| ≈ 0.89 at 16:9) — never in the central half — and its
+  front-right fender lands in the lower half. Tests assert the pose
+  against the shipped GLB's own vertices (clipped area + dish vertices
+  in frame) and the fallback disc sampled on its surface.
+  The chase↔driver toggle also SNAPS the camera to the new pose instead
   of lerping — the straight lerp path runs through the rover body
   and the dish, so at low frame rates the view clipped through the
-  dish mid-transition; the look direction still eases.
+  dish mid-transition; the look direction still eases. Caveat: on
+  rough terrain the rover rolls toward the dish side, which could bring
+  a dish edge further into a wide desktop frame; on phone the dish is
+  fully clear (0 vertices in frame).
 - **Dust + tracks (2026-11-14):** `RoverEffects.js` — wheel dust
   (a fixed 48-sprite pool spawned at the rear wheel contact points
   while |speed| > 0.5 m/s, ~6 particles per metre driven, ballistic
@@ -165,10 +219,9 @@ code-built until this model arrived via Space ROS.
   three's GLTFLoader and `wireRealRover(scene)` wires its wheel/steer
   pivots into `{ group, wheels, steerGroups }` — the same shape the
   code-built group exposes (front/rear steer pivots yaw with steering;
-  wheels spin with speed). The swapped-in GLB replaces the group with
-  no changes to drive physics, HUD, or terrain. `LunarScene.jsx`
-  starts on the code-built rover and swaps the GLB in when it arrives;
-  any load/wiring failure keeps the code-built rover (see above).
+  wheels spin with speed). The GLB is mounted when it arrives (no rover
+  is shown while it loads — Step 3); any load/wiring failure mounts the
+  code-built rover instead (see above).
 - **Controls** — WASD / arrow keys (W/↑ forward, S/↓ reverse, A/D or
   ←/→ steer), Space = brake, Esc = back to orbit. On-screen
   hold-to-drive buttons (▲ ▼ ◀ ▶ ⏹) via pointerdown/up. Keys are
@@ -205,14 +258,17 @@ code-built until this model arrived via Space ROS.
   primitive approximation — but it is still a museum mesh, not the
   flight vehicle: details and proportions are the Deutsches Museum
   model's, scaled to the published dimensions. The code-built rover
-  (simplified primitives: seats, mast, antenna, fenders) remains as
-  the load-failure fallback, and drives while the GLB loads (usually
-  not at all now — the GLB is preloaded from app mount).
+  (simplified primitives: seats, mast, antenna, fenders) is the
+  load-failure fallback ONLY — it is never shown while the GLB loads
+  (Step 3: the old stand-in flashed for ~2 s on cold load).
 - Wheel dust and track marks are **illustrative effects**, not
   regolith physics: no dust-ballistics model beyond a 1.62 m/s² fall,
   no sinkage, no track depth — they show where the wheels have been,
   not what the regolith did.
 - The real LRV steers front AND rear wheels in opposite directions;
   the model does the same (rear pivot gets −steerRad).
-- Sun/Earth verdicts in Drive mode use the flat-horizon geometric
-  rules, same as orbit mode — no terrain shadowing.
+- Sun/Earth verdicts in Drive mode use the real local horizon from the
+  LOLA DEM measured at the landing point — the same terrain-aware
+  verdicts as orbit mode. As the rover drives away from the landing
+  point, that horizon is an approximation of the rover's own horizon
+  (the HUD says so).

@@ -110,7 +110,7 @@ describe('ephemeris — SOURCES.md §C3 reference values', () => {
 });
 
 describe('ephemeris — transform vs astronomy-engine Libration()', () => {
-  it('sub-Earth point matches Libration() to ≤ 0.03° across 7 dates (research: 0.027°)', () => {
+  it('sub-Earth point matches Libration() to ≤ 0.03° across 7 dates (research: max angular separation 0.0288°)', () => {
     for (const iso of [
       '2026-06-15T00:00:00Z', '2026-11-09T07:02:00Z', '2026-11-14T12:00:00Z',
       '2026-11-15T12:00:00Z', '2026-11-24T14:53:00Z', '2026-12-01T00:00:00Z',

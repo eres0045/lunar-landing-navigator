@@ -198,7 +198,153 @@ describe('preloadRealRover cache (background load while in orbit view)', () => {
   });
 });
 
+/** Parse the shipped GLB (same pattern as the wiring test above). */
+async function parseShippedGlb() {
+  const buf = readFileSync(join(process.cwd(), 'public/models/lrv/lunar_roving_vehicle.glb'));
+  const bytes = new Uint8Array(buf);
+  return new GLTFLoader().parseAsync(bytes.buffer, '');
+}
+
+/** The high-gain dish mesh in the shipped GLB: hangs high (min y > 1.0 m)
+ * at the front (max z > 1.5 m) and reaches the model's top (y ≈ 1.86 m). */
+function findDishBox(lrv) {
+  let dish = null;
+  lrv.traverse((o) => {
+    if (!o.isMesh) return;
+    const b = new THREE.Box3().setFromObject(o);
+    if (b.min.y > 1.0 && b.max.y > 1.8 && b.max.z > 1.5) dish = b;
+  });
+  return dish;
+}
+
+/** Project a rover-local point through the driver camera at the given
+ * aspect, using the app's real camera (PerspectiveCamera, 50° vertical
+ * FOV — LunarScene.jsx). Returns the NDC vector. Used only for the
+ * code-built fallback (simple box/circle geometry, where a corner or a
+ * sampled disc point IS a real surface point). For the GLB it is
+ * WRONG: a bbox corner is a phantom point — see clippedVisibleArea. */
+function projectDriverCam(point, aspect, pose) {
+  const cam = new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+  cam.position.copy(pose.camera);
+  cam.lookAt(pose.lookAt);
+  cam.updateMatrixWorld(true);
+  return point.clone().project(cam);
+}
+
+/** Clipped visible screen area (NDC²; the frame is 4 NDC²) of a mesh's
+ * REAL triangles through the driver camera, plus the area-weighted
+ * centroid NDC y (negative = bottom of the frame). Clips in CLIP SPACE
+ * (homogeneous, before the perspective divide): clipping in NDC is
+ * wrong because vertices behind the camera mirror in NDC and fabricate
+ * phantom area. This is the metric the pose was searched against —
+ * a bbox corner can project in-frame while every real vertex is
+ * off-frame (the 2026-11-15 lesson: the fender's bbox corner
+ * (−0.77, 0.81, 1.57) projected to NDC (0.46, −0.81) yet the fender
+ * had ZERO visible area from (−0.7, 1.2, 0.6)). */
+function clippedVisibleArea(mesh, aspect, pose) {
+  const cam = new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+  cam.position.copy(pose.camera);
+  cam.lookAt(pose.lookAt);
+  cam.updateMatrixWorld(true);
+  const mvp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  mesh.updateWorldMatrix(true, false);
+  const pos = mesh.geometry.attributes.position;
+  const idx = mesh.geometry.index;
+  const v = [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()];
+  const tmp = new THREE.Vector3();
+  const planes = [
+    (p) => p.x + p.w, (p) => p.w - p.x,
+    (p) => p.y + p.w, (p) => p.w - p.y,
+    (p) => p.z + p.w, (p) => p.w - p.z,
+  ];
+  let area = 0, weightedY = 0;
+  const clipArea = (a, b, c) => {
+    let poly = [a.clone(), b.clone(), c.clone()];
+    for (const f of planes) {
+      if (poly.length === 0) break;
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const cur = poly[i], prev = poly[(i + poly.length - 1) % poly.length];
+        const fc = f(cur), fp = f(prev);
+        if (fc >= 0) {
+          if (fp < 0) { const t = fp / (fp - fc); out.push(new THREE.Vector4().lerpVectors(prev, cur, t)); }
+          out.push(cur);
+        } else if (fp >= 0) { const t = fp / (fp - fc); out.push(new THREE.Vector4().lerpVectors(prev, cur, t)); }
+      }
+      poly = out;
+    }
+    if (poly.length < 3) return { area: 0, cy: 0 };
+    const ndc = poly.map((p) => [p.x / p.w, p.y / p.w]);
+    let aSum = 0, ySum = 0;
+    for (let i = 1; i < ndc.length - 1; i++) {
+      const aTri = Math.abs((ndc[i][0] - ndc[0][0]) * (ndc[i + 1][1] - ndc[0][1]) - (ndc[i + 1][0] - ndc[0][0]) * (ndc[i][1] - ndc[0][1])) / 2;
+      aSum += aTri;
+      ySum += aTri * ((ndc[0][1] + ndc[i][1] + ndc[i + 1][1]) / 3);
+    }
+    return { area: aSum, cy: aSum > 0 ? ySum / aSum : 0 };
+  };
+  const tri = (a, b, c) => {
+    for (let k = 0; k < 3; k++) {
+      tmp.fromBufferAttribute(pos, [a, b, c][k]).applyMatrix4(mesh.matrixWorld);
+      v[k].set(tmp.x, tmp.y, tmp.z, 1).applyMatrix4(mvp);
+    }
+    const r = clipArea(v[0], v[1], v[2]);
+    area += r.area;
+    weightedY += r.area * r.cy;
+  };
+  if (idx) { for (let i = 0; i < idx.count; i += 3) tri(idx.getX(i), idx.getX(i + 1), idx.getX(i + 2)); }
+  else { for (let i = 0; i < pos.count; i += 3) tri(i, i + 1, i + 2); }
+  return { area, centroidY: area > 0 ? weightedY / area : 0 };
+}
+
+/** Count the dish mesh's REAL vertices in frame (clip-space test) and
+ * return their NDC bounding box (null when none are in frame). */
+function dishVertsInFrame(lrv, aspect, pose) {
+  const cam = new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+  cam.position.copy(pose.camera);
+  cam.lookAt(pose.lookAt);
+  cam.updateMatrixWorld(true);
+  const mvp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  const dish = lrv.getObjectByName('Object_9_7');
+  dish.updateWorldMatrix(true, false);
+  const pos = dish.geometry.attributes.position;
+  const v = new THREE.Vector3();
+  const c = new THREE.Vector4();
+  let n = 0;
+  const range = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(dish.matrixWorld);
+    c.set(v.x, v.y, v.z, 1).applyMatrix4(mvp);
+    if (c.w <= 0) continue;
+    const nx = c.x / c.w, ny = c.y / c.w, nz = c.z / c.w;
+    if (Math.abs(nx) <= 1 && Math.abs(ny) <= 1 && nz >= -1 && nz <= 1) {
+      n++;
+      range.minX = Math.min(range.minX, nx); range.maxX = Math.max(range.maxX, nx);
+      range.minY = Math.min(range.minY, ny); range.maxY = Math.max(range.maxY, ny);
+    }
+  }
+  return { count: n, ndc: n ? range : null };
+}
+
+/** Aspects the app is actually used at: phone portrait + desktop. */
+const DRIVER_CAM_ASPECTS = { phone: 390 / 844, desktop1610: 1.6, desktop169: 16 / 9 };
+
 describe('driverCameraPose (driver cam clears the high-gain dish)', () => {
+  it('pins the computed pose: right seat, eye at the seat, pitched down', () => {
+    // (−0.75, 1.2, 0.0), look 30 m ahead at −2.0 m (6.1° down) — the
+    // vertex-area search (scripts/_pose-vertex.mjs) found the camera
+    // must sit AT the seat (forward 0.0), not 0.6 m ahead of it: at
+    // 0.6 m the fender is 0.13–0.97 m away and every real vertex is
+    // clipped (ZERO visible area). −0.75 is the seat's outer edge
+    // (seat spans x −0.73…−0.11). The look target is below the terrain
+    // — it is a direction (the downward pitch), not a ground point.
+    expect(DRIVER_CAM.lateralM).toBe(-0.75);
+    expect(DRIVER_CAM.forwardM).toBe(0.0);
+    expect(DRIVER_CAM.heightM).toBe(1.2);
+    expect(DRIVER_CAM.lookAheadM).toBe(30);
+    expect(DRIVER_CAM.lookHeightM).toBe(-2.0);
+  });
+
   it('sits in the right seat (opposite the dish), eye height, looking far ahead', () => {
     const pos = new THREE.Vector3(0, 0, 0);
     const { camera, lookAt } = driverCameraPose(pos, 0); // heading north
@@ -221,35 +367,114 @@ describe('driverCameraPose (driver cam clears the high-gain dish)', () => {
     expect(lookAt.z).toBeCloseTo(-5, 6);
   });
 
-  it('keeps the REAL dish far outside the view: every dish-bbox corner is >40° off the forward axis', async () => {
-    // The dish is the mesh whose bbox hangs high (min y > 1.0 m) at
-    // the front (max z > 1.5 m) and reaches the model's top (y ≈ 1.86 m)
-    // — measured from the shipped GLB itself. The camera's horizontal
-    // half-field of view is ~37° at 16:10 (50° vertical FOV), so 40°+
-    // is clear with margin even on wider screens.
-    const buf = readFileSync(join(process.cwd(), 'public/models/lrv/lunar_roving_vehicle.glb'));
-    const bytes = new Uint8Array(buf);
-    const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '');
+  it('keeps the REAL dish out of the frame on phone (real vertices, not bbox corners)', async () => {
+    // The dish bbox (x +0.16…+0.91, y 1.17…1.86, z 0.85…1.55) comes
+    // from the shipped GLB itself. Its CORNERS are phantom points, so
+    // this test counts the dish mesh's REAL vertices in frame
+    // (clip-space): on a 390×844 phone none is in frame. On a wide
+    // desktop frame the dish's inner edge intrudes at the TOP-LEFT
+    // edge only (NDC x ≤ −0.7, never the central half) — documented,
+    // not a failure: the phone is the verified viewport and the dish
+    // never fills the centre on any aspect.
+    const gltf = await parseShippedGlb();
     const lrv = gltf.scene.getObjectByName('lrv');
-    let dish = null;
-    lrv.traverse((o) => {
-      if (!o.isMesh) return;
-      const b = new THREE.Box3().setFromObject(o);
-      if (b.min.y > 1.0 && b.max.y > 1.8 && b.max.z > 1.5) dish = b;
-    });
+    const dish = findDishBox(lrv);
     expect(dish).toBeTruthy();
-    const { camera } = driverCameraPose(new THREE.Vector3(0, 0, 0), 0);
-    const fwd = new THREE.Vector3(0, 0, 1);
-    const corners = [];
-    for (const x of [dish.min.x, dish.max.x]) {
-      for (const y of [dish.min.y, dish.max.y]) {
-        for (const z of [dish.min.z, dish.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    expect(dish.min.x).toBeCloseTo(0.16, 1);
+    expect(dish.max.x).toBeCloseTo(0.91, 1);
+    expect(dish.max.y).toBeCloseTo(1.86, 1);
+    expect(dish.max.z).toBeCloseTo(1.55, 1);
+    const pose = driverCameraPose(new THREE.Vector3(0, 0, 0), 0);
+    const phone = dishVertsInFrame(lrv, DRIVER_CAM_ASPECTS.phone, pose);
+    expect(phone.count).toBe(0);
+    for (const aspect of [DRIVER_CAM_ASPECTS.desktop1610, DRIVER_CAM_ASPECTS.desktop169]) {
+      const d = dishVertsInFrame(lrv, aspect, pose);
+      if (d.count > 0) {
+        // At the left edge only, never in the central half.
+        expect(d.ndc.maxX).toBeLessThan(-0.6);
+        expect(Math.abs(d.ndc.minX)).toBeLessThanOrEqual(1);
       }
     }
-    for (const c of corners) {
-      const dir = c.clone().sub(camera).normalize();
-      const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dir.dot(fwd)))) * 180) / Math.PI;
-      expect(angleDeg).toBeGreaterThan(40);
+  });
+
+  it('shows the REAL front fender + wheel at the bottom of the frame (clipped vertex area)', async () => {
+    // Clipped screen area of the REAL triangles (clip-space, not a
+    // bbox corner — see clippedVisibleArea): the driver's-side
+    // (right, −X) front fender and wheel must have substantial visible
+    // area on a 390×844 phone, centred in the bottom half. The old
+    // pose (−0.7, 1.2, 0.6) had ZERO area for every front part — that
+    // is what this test guards against. The left (far-side) fender
+    // stays off-frame on phone (it is the far side).
+    const gltf = await parseShippedGlb();
+    const lrv = gltf.scene.getObjectByName('lrv');
+    const pose = driverCameraPose(new THREE.Vector3(0, 0, 0), 0);
+    const fender = clippedVisibleArea(lrv.getObjectByName('cover_R_F'), DRIVER_CAM_ASPECTS.phone, pose);
+    const wheel = clippedVisibleArea(lrv.getObjectByName('wheel_fr'), DRIVER_CAM_ASPECTS.phone, pose);
+    expect(fender.area).toBeGreaterThan(0.5);
+    expect(wheel.area).toBeGreaterThan(1.0);
+    expect(fender.area + wheel.area).toBeGreaterThan(3.0);
+    expect(fender.centroidY).toBeLessThan(-0.3);
+    expect(wheel.centroidY).toBeLessThan(-0.3);
+    const farFender = clippedVisibleArea(lrv.getObjectByName('cover_L_F'), DRIVER_CAM_ASPECTS.phone, pose);
+    expect(farFender.area).toBeLessThan(0.05);
+    // And on desktop the front is visible too (not just the phone).
+    const fenderD = clippedVisibleArea(lrv.getObjectByName('cover_R_F'), DRIVER_CAM_ASPECTS.desktop169, pose);
+    const wheelD = clippedVisibleArea(lrv.getObjectByName('wheel_fr'), DRIVER_CAM_ASPECTS.desktop169, pose);
+    expect(fenderD.area + wheelD.area).toBeGreaterThan(0.5);
+  });
+
+  it('does not put the CODE-BUILT fallback dish dead-centre in frame', () => {
+    // The fallback rover's dish is a centred disc (r 0.28 m at
+    // (0, 1.59, 1.30), tilted −0.5 rad). Sampled ON the disc: its
+    // centre is off-frame on phone, and at the TOP-LEFT edge on
+    // desktop (max|NDC| ≈ 0.89 at 16:9 — the new pose sits further
+    // back, so the centred dish enters the wide desktop frame);
+    // no sampled point falls in the central half of the frame on any
+    // aspect — the dish never fills the centre. Its front-right
+    // fender still lands in the lower half of the frame.
+    const { group } = createRoverGroup();
+    group.updateMatrixWorld(true);
+    let dishMesh = null;
+    let fenderMesh = null;
+    group.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.geometry?.type === 'CircleGeometry') dishMesh = o;
+      const p = o.geometry?.parameters;
+      if (p && p.width === 0.34 && p.height === 0.03 && p.depth === 0.95
+        && o.position.x < 0 && o.position.z > 0) fenderMesh = o;
+    });
+    expect(dishMesh).toBeTruthy();
+    expect(fenderMesh).toBeTruthy();
+    const pose = driverCameraPose(new THREE.Vector3(0, 0, 0), 0);
+    const centre = new THREE.Vector3();
+    dishMesh.getWorldPosition(centre);
+    const q = dishMesh.getWorldQuaternion(new THREE.Quaternion());
+    const xDir = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+    const yDir = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const r = dishMesh.geometry.parameters.radius;
+    for (const aspect of Object.values(DRIVER_CAM_ASPECTS)) {
+      const nc = projectDriverCam(centre, aspect, pose);
+      // Never in the central half of the frame (off-frame on phone,
+      // at the top-left edge on desktop). Edge of frame at worst is
+      // the bar for the fallback (its dish is centred by construction).
+      expect(Math.max(Math.abs(nc.x), Math.abs(nc.y))).toBeGreaterThan(0.5);
+      for (let i = 0; i < 16; i++) {
+        const th = (i / 16) * Math.PI * 2;
+        const pt = centre.clone()
+          .addScaledVector(xDir, r * Math.cos(th))
+          .addScaledVector(yDir, r * Math.sin(th));
+        const n = projectDriverCam(pt, aspect, pose);
+        // Never in the central half of the frame.
+        expect(Math.abs(n.x) < 0.5 && Math.abs(n.y) < 0.5).toBe(false);
+      }
+    }
+    const fb = new THREE.Box3().setFromObject(fenderMesh);
+    const innerFront = new THREE.Vector3(fb.max.x, fb.max.y, fb.max.z);
+    for (const aspect of Object.values(DRIVER_CAM_ASPECTS)) {
+      const n = projectDriverCam(innerFront, aspect, pose);
+      expect(Math.abs(n.x)).toBeLessThanOrEqual(1);
+      expect(n.y).toBeLessThanOrEqual(0);
+      expect(n.y).toBeGreaterThanOrEqual(-1);
     }
   });
 

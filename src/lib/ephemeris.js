@@ -8,13 +8,15 @@
  * it takes Earth-equatorial RA/Dec only and returns nonsense on the Moon.
  *
  * Validation (vitest, src/lib/ephemeris.test.js): sub-Earth point vs
- * astronomy-engine's own Libration() ≤ 0.027° across 7 dates; the §C3
+ * astronomy-engine's own Libration() ≤ 0.03° across 7 dates (max
+ * angular separation 0.0288° — SOURCES.md §G2 re-measurement); the §C3
  * reference values (full Moon, Malapert Nov 14/15, new Moon, CR1) all
  * reproduce to ≤ 0.01°. Without the nutation terms the error is up to
  * 1.6° — nutation is mandatory, not optional.
  *
- * Claimed accuracy in the UI: ±0.1° geometry. Flat-horizon model — no
- * terrain shadowing.
+ * Claimed accuracy in the UI: ±0.1° geometry. The ephemeris itself
+ * has no terrain model — the terrain-aware horizon is applied to its
+ * alt/az output in data.js, never here.
  */
 import * as Astronomy from 'astronomy-engine';
 

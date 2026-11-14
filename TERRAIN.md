@@ -37,6 +37,12 @@ how the grids were sampled.
 - `public/terrain/nac/<siteId>.jpg` — real LROC NAC ground texture for
   8 sites (1024×1024, ~1.5 MB total), plus `manifest.json` with the
   per-site bounding box. See "Ground texture" below.
+- `src/data/horizons.json` — the BUNDLED terrain-aware horizon profiles
+  (14 sites, 360 one-degree bins each, 2 m eye height; ~67 KB), generated
+  by `app/tools/compute-horizons.mjs` from the grids above and imported by
+  `src/lib/data.js` — every POWER/COMM verdict uses them by default,
+  with no fetch at runtime. The old `public/terrain/horizons.json` copy
+  is deleted; do not re-add it.
 - `public/terrain/PROVENANCE.md` — provenance, schema, mapping
   formula, verification log.
 
@@ -111,15 +117,17 @@ per-site verdicts: project-root `raw-lroc/PROVENANCE.md` (NOT shipped).
 - **Real-time DEM shadows:** the Sun casts shadows (`PCFShadowMap`,
   2048 map over ±160 m, bias −0.0002) — real ridges cast real shadows
   along the Sun azimuth in the Drive view. This is a view aid only:
-  POWER/COMM verdicts still use the flat-horizon geometric model
-  (see "Honest limits").
-- **Earthshine + readability fill:** a hemisphere fill (0.8) plus
-  ambient 0.7 in Drive mode stand in for Earthshine + scattered
+  POWER/COMM verdicts now use the terrain-aware horizon (see "Honest
+  limits"), and the rendered shadows do NOT feed the verdicts.
+- **Earthshine + readability fill:** a hemisphere fill (1.3) plus
+  ambient 1.0 in Drive mode stand in for Earthshine + scattered
   light and keep the surface readable. At the poles the Sun sits at
   0–6°, so flat ground gets ~10% of direct Sun and most of the near
   field sits in long DEM shadows — with the old 0.18/0.3 fill the
   ground rendered black (mean 3.8/255 in a probe screenshot) and the
-  real NAC texture was invisible. The raised fill is a display
+  real NAC texture was invisible. The 0.8/0.7 fill (Step 2) still left
+  the mid-ground at 11.5/255 mean luminance at LOW SUN on the Nov 14
+  live probe, so Step 3 raised the fill to 1.3/1.0. The raised fill is a display
   choice, labelled "brightness adjusted for readability" in the HUD;
   it does not fake a Sun and does not feed the verdicts.
 
@@ -228,11 +236,22 @@ east 500 m raises it +33.3 m; south 500 m drops it −64.5 m.
 - **Rocks are decorative** (no collision) and the rover physics is
   still the kinematic approximation in ROVER.md (no slip, suspension,
   or regolith dynamics).
-- **No terrain shadowing in the verdicts.** Sun/Earth POWER/COMM
-  verdicts still use the flat-horizon geometric model — real ridges
-  can hide the Sun or Earth near the horizon. The Drive view renders
-  real-time DEM shadows as a view aid, but those shadows do NOT feed
-  the verdicts. Terrain-aware shadowing in the verdicts is Step 3 work.
+- **Terrain-aware horizon in the verdicts (Step 3, 2026-11-14).**
+  POWER/COMM verdicts now use the real local horizon from the DEM —
+  local 10/20 m grid within 600 m plus the regional 30 m DEM
+  (LDEM_75S_30M) out to 9990 m at the 13 south-pole sites, 2 m eye
+  height; Apollo 15 is local-only out to its grid corner (~363 m).
+  Profiles are precomputed by `app/tools/compute-horizons.mjs` and
+  shipped BUNDLED as `src/data/horizons.json` (round-trip test in
+  `app/src/lib/horizon.test.js` recomputes Malapert from the raw grids
+  and fails on > 0.01° drift).
+- **Horizon range limit — the 600 m / 10 km boundary.** The horizon
+  sees terrain only inside the grids: 9990 m at the south-pole sites,
+  ~363 m at Apollo 15. More distant massifs are NOT in the horizon;
+  verdicts near the horizon can still differ from reality. The
+  regional grids are valid only inside the r ≤ 9990 m disc they were
+  fetched for (corner nodes beyond that radius are edge-clamped, not
+  data — horizon rays stop at 9990 m in every direction).
 - The 5 m product (`LDEM_87S_5M`) covers only lat ≤ −87.5°, so it
   does NOT cover Malapert (−85.99°) or 9 of the 13 sites — 10 m is
   the finest uniform product covering the default site.

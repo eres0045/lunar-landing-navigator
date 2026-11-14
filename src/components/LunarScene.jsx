@@ -363,10 +363,12 @@ export default function LunarScene({
     // the Sun sits at 0–6°, so flat ground gets ~10% of direct Sun and
     // long DEM shadows cover most of the near field — with a faint fill
     // the surface reads as pure black and the real NAC texture is
-    // invisible. The fill is raised (0.8) so the ground stays readable;
-    // it is a display choice, labelled "brightness adjusted for
-    // readability" in the HUD/Evidence — it does not fake a Sun.
-    driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x2a2a33, 0.8));
+    // invisible. The fill is raised (1.3, Step 3 — the 0.8 fill still
+    // left the mid-ground at 11.5/255 mean luminance at LOW SUN on the
+    // Nov 14 live probe, NAC texture invisible) so the ground stays
+    // readable; it is a display choice, labelled "brightness adjusted
+    // for readability" in the HUD/Evidence — it does not fake a Sun.
+    driveGroup.add(new THREE.HemisphereLight(0x8fa3c7, 0x2a2a33, 1.3));
     // Drive ground: a flat 500 m disc until this site's real LOLA DEM
     // loads (applyTerrain swaps in the displaced 1200 m heightfield —
     // one vertex per grid node, same heights the rover drives on).
@@ -494,16 +496,18 @@ export default function LunarScene({
 
     // Real Apollo LRV model (GLB, public/models/lrv/) — the fetch was
     // already started on app mount by `preloadRealRover` (App.jsx),
-    // so this usually resolves instantly from the cache; the
-    // code-built rover drives until it arrives, and stays if the load
-    // fails or the GLB is missing a pivot. The swap only re-points
-    // the `roverParts` binding the animation loop already reads every
-    // frame, so drive physics, HUD, terrain, and controls are
-    // untouched. `roverLoadAlive` guards the swap if Drive mode / the
-    // scene is torn down before the load finishes. The HUD reports
-    // the model state via onRoverModelStatus ('loading' / 'real' /
-    // 'fallback') so the stand-in is never shown silently.
-    let roverParts = createRoverGroup();
+    // so this usually resolves instantly from the cache. NO rover is
+    // mounted while it loads: on a cold load the code-built rover used
+    // to flash on screen for ~2 s before the swap (live probe,
+    // Step 3 — the stand-in's big centred dish filled the chase view),
+    // so the fallback is now mounted ONLY if the load fails. The scene
+    // is never blank while waiting — terrain, sky, HUD and the drive
+    // camera (which follows the physics state, not the mesh) are all
+    // live; the rover simply appears the moment its model is ready.
+    // `roverLoadAlive` guards the mount if Drive mode / the scene is
+    // torn down before the load finishes. The HUD reports the model
+    // state via onRoverModelStatus ('loading' / 'real' / 'fallback').
+    let roverParts = null;
     // The rover casts and receives shadows in Drive mode (its own
     // shadow on the DEM is part of the honest lighting).
     const applyRoverShadows = (parts) => {
@@ -511,14 +515,11 @@ export default function LunarScene({
         if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
       });
     };
-    applyRoverShadows(roverParts);
-    driveGroup.add(roverParts.group);
     let roverLoadAlive = true;
     onRoverModelStatus?.('loading');
     loadRealRover(`${base}models/lrv/lunar_roving_vehicle.glb`)
       .then((real) => {
         if (!roverLoadAlive) return;
-        driveGroup.remove(roverParts.group);
         roverParts = real;
         applyRoverShadows(real);
         driveGroup.add(real.group);
@@ -526,8 +527,13 @@ export default function LunarScene({
       })
       .catch((err) => {
         // 404, corrupt file, slow/failed network, or a missing node —
-        // the code-built rover keeps driving; nothing else changes.
-        console.warn('[rover] real LRV model unavailable — keeping the code-built rover:', err);
+        // ONLY now is the code-built rover mounted (as the fallback);
+        // nothing else changes.
+        console.warn('[rover] real LRV model unavailable — mounting the code-built rover:', err);
+        if (!roverLoadAlive) return;
+        roverParts = createRoverGroup();
+        applyRoverShadows(roverParts);
+        driveGroup.add(roverParts.group);
         onRoverModelStatus?.('fallback');
       });
 
@@ -639,9 +645,11 @@ export default function LunarScene({
         // Raise ambient fill in Drive mode: at polar Sun angles the
         // flat ground gets ~10% of direct Sun and sits mostly in long
         // DEM shadows, so the 0.18 orbit-style fill leaves the real
-        // surface black. 0.7 keeps the NAC texture + DEM shading
-        // readable; the Sun + shadows still carry the contrast.
-        ambientLight.intensity = 0.7;
+        // surface black. 1.0 (Step 3 — raised from 0.7 with the
+        // hemisphere fill, same Nov 14 live-probe finding) keeps the
+        // NAC texture + DEM shading readable; the Sun + shadows still
+        // carry the contrast.
+        ambientLight.intensity = 1.0;
         // Live readout of the chase-cam orbit angle (drag / wheel /
         // Reset-view all flow through the same ref) for the mobile
         // probe and any external check.
@@ -663,15 +671,22 @@ export default function LunarScene({
             lastTrackSiteId = rover.siteId;
             tracks.reset();
           }
-          // Local frame: x = east, y = up, z = north.
-          roverParts.group.position.set(rover.eastM, rover.heightM, rover.northM);
-          roverParts.group.rotation.order = 'YXZ';
-          roverParts.group.rotation.y = rover.headingRad;
-          roverParts.group.rotation.x = -rover.pitchRad;
-          roverParts.group.rotation.z = rover.rollRad;
-          for (const w of Object.values(roverParts.wheels)) w.rotation.x = rover.wheelAngleRad;
-          roverParts.steerGroups.front.rotation.y = rover.steerRad;
-          roverParts.steerGroups.rear.rotation.y = -rover.steerRad;
+          // Local frame: x = east, y = up, z = north. The mesh follows
+          // the physics state — and the camera follows the state too,
+          // so driving works (and the view stays live) while the GLB
+          // is still loading and no mesh is mounted yet (Step 3: no
+          // stand-in flash — the fallback mounts only on load failure).
+          const pos = new THREE.Vector3(rover.eastM, rover.heightM, rover.northM);
+          if (roverParts) {
+            roverParts.group.position.copy(pos);
+            roverParts.group.rotation.order = 'YXZ';
+            roverParts.group.rotation.y = rover.headingRad;
+            roverParts.group.rotation.x = -rover.pitchRad;
+            roverParts.group.rotation.z = rover.rollRad;
+            for (const w of Object.values(roverParts.wheels)) w.rotation.x = rover.wheelAngleRad;
+            roverParts.steerGroups.front.rotation.y = rover.steerRad;
+            roverParts.steerGroups.rear.rotation.y = -rover.steerRad;
+          }
           // Dust at the rear wheels + tracks along the driven path
           // (illustrative — labelled as such in the HUD/Evidence).
           dust.update(dt, rover);
@@ -679,13 +694,14 @@ export default function LunarScene({
 
           // Chase cam (behind/above, follows heading, orbits 360°
           // around the rover when the driver drags) or driver cam.
-          const pos = roverParts.group.position;
           let camTarget;
           let lookTarget;
           if (driveCam === 'driver') {
-            // driverCameraPose: ahead of the mast/dish and just above
-            // it, so the antenna is behind the camera — a driver's
-            // view over the rover's front. See RoverModel.jsx.
+            // driverCameraPose: in the driver's (right) seat, at the
+            // seat (not ahead of it), pitched 6.1° down — the
+            // front fender + wheel sit at the bottom of the frame
+            // and the high-gain dish (left side) stays out of frame
+            // on phone. See RoverModel.jsx (DRIVER_CAM).
             const pose = driverCameraPose(pos, rover.headingRad);
             camTarget = pose.camera;
             lookTarget = pose.lookAt;
@@ -723,7 +739,11 @@ export default function LunarScene({
         const sunLocal = altAzToLocal(livePos.sun.alt, livePos.sun.az);
         const earthLocal = altAzToLocal(livePos.earth.alt, livePos.earth.az);
         sunLight.position.copy(sunLocal).multiplyScalar(300);
-        sunLight.target.position.copy(roverParts.group.position);
+        // Aim the shadow camera at the rover's physics position (the
+        // mesh may not be mounted yet while the GLB loads).
+        sunLight.target.position.set(
+          rover ? rover.eastM : 0, rover ? rover.heightM : 0, rover ? rover.northM : 0,
+        );
         sunLight.target.updateMatrixWorld();
         sunDisc.position.copy(sunLocal).multiplyScalar(400);
         sunDisc.scale.setScalar(4); // ~0.26° angular radius at 400 m

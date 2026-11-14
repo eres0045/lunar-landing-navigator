@@ -21,6 +21,7 @@
  * automatically once a DEM plugs in here — no other code changes.
  */
 import { sunEarthAt } from './ephemeris.js';
+import { horizonAt } from './horizon.js';
 
 export const MOON_RADIUS_M = 1_737_400;
 
@@ -250,9 +251,14 @@ export function speedKmh(state) {
 /**
  * Live Sun/Earth + POWER/COMM at the rover's CURRENT position
  * (not the landing site's) — the Drive HUD calls this.
- * Returns { lat, lon, sun, earth, power, comm }.
+ * `horizonProfile` is the LANDING-SITE profile (the rover's own
+ * horizon as it drives is approximated by it — the HUD says so).
+ * With a profile the verdicts are terrain-aware; with null they
+ * are the flat 0° rule. Returns { lat, lon, sun, earth, power,
+ * comm, sunHorizonDeg, earthHorizonDeg } (horizon degrees null
+ * when flat).
  */
-export function roverVerdict(date, state, { powerVerdict, commVerdict }) {
+export function roverVerdict(date, state, { powerVerdict, commVerdict, horizonProfile = null }) {
   const { lat, lon } = roverLatLon(state);
   const pos = sunEarthAt(date, lat, lon);
   return {
@@ -260,7 +266,9 @@ export function roverVerdict(date, state, { powerVerdict, commVerdict }) {
     lon,
     sun: pos.sun,
     earth: pos.earth,
-    power: powerVerdict(pos.sun.alt),
-    comm: commVerdict(pos.earth.alt),
+    sunHorizonDeg: horizonProfile ? horizonAt(horizonProfile, pos.sun.az) : null,
+    earthHorizonDeg: horizonProfile ? horizonAt(horizonProfile, pos.earth.az) : null,
+    power: powerVerdict(pos.sun.alt, pos.sun.az, horizonProfile),
+    comm: commVerdict(pos.earth.alt, pos.earth.az, horizonProfile),
   };
 }

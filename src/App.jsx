@@ -10,7 +10,9 @@
  *
  * All numbers come from src/lib/data.js + src/lib/ephemeris.js
  * (astronomy-engine + IAU lunar rotation model, ±0.1° geometry,
- * flat horizon — no terrain shadowing). Nothing is invented.
+ * terrain-aware horizon from the real LOLA DEM — bundled profiles,
+ * 2 m eye height; explicit null = flat 0° horizon, reference only).
+ * Nothing is invented.
  *
  * Boot: the app opens DIRECTLY in Drive mode (rover driving view) at
  * the default site/date. `?view=orbit` in the URL boots the orbit
@@ -30,7 +32,7 @@ import {
   compareSites, rankSites, findWindows, SOURCES, METHOD,
   REFERENCE_VALUES, PUBLISHED_ILLUMINATION, DISCLAIMER,
   POWER_RULE, COMM_RULE, powerVerdict, commVerdict, TERRAIN_NOTE,
-  ROVER_NOTE,
+  ROVER_NOTE, horizonForSite, buildSunPathChart, CR1_VALIDATION,
 } from './lib/data.js';
 import {
   LRV, createRover, roverVerdict, headingDeg,
@@ -59,6 +61,96 @@ function VerdictBadge({ verdict }) {
     >
       {verdict.label}
     </span>
+  );
+}
+
+// Sun/Earth paths over the real horizon — the Evidence modal's visual
+// proof that the verdicts come from real terrain (data from
+// buildSunPathChart, data.js). Inline SVG: x = azimuth 0–360°,
+// y = elevation; the horizon is a filled ridge silhouette, the Sun
+// path an amber line with hourly dots, the Earth path a short sky-blue
+// arc, rise/set crossings as triangles. The y range is computed from
+// the data (profile min/max + both paths, padded) — nothing is clipped.
+function HorizonChart({ data }) {
+  const W = 560;
+  const H = 240;
+  const PL = 40;
+  const PR = 10;
+  const PT = 10;
+  const PB = 26;
+  const allElev = [
+    ...data.horizon.map((p) => p.elev),
+    ...data.sun.map((p) => p.alt),
+    ...data.earth.map((p) => p.alt),
+  ];
+  let lo = Math.min(...allElev);
+  let hi = Math.max(...allElev);
+  const pad = Math.max(1, (hi - lo) * 0.15);
+  lo = Math.floor(lo - pad);
+  hi = Math.ceil(hi + pad);
+  const x = (az) => PL + (az / 360) * (W - PL - PR);
+  const y = (e) => PT + (1 - (e - lo) / (hi - lo)) * (H - PT - PB);
+  const yStep = hi - lo <= 16 ? 2 : 5;
+  const yTicks = [];
+  for (let e = Math.ceil(lo / yStep) * yStep; e <= hi; e += yStep) yTicks.push(e);
+  const AZ_LABELS = [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']];
+  const horizonPath = [
+    `M ${x(0)} ${y(data.horizon[0].elev)}`,
+    ...data.horizon.slice(1).map((p) => `L ${x(p.az)} ${y(p.elev)}`),
+    `L ${x(360)} ${y(data.horizon[359].elev)}`,
+    `L ${x(360)} ${y(lo)} L ${x(0)} ${y(lo)} Z`,
+  ].join(' ');
+  const sunPath = data.sun.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.az)} ${y(p.alt)}`).join(' ');
+  const earthPath = data.earth.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.az)} ${y(p.alt)}`).join(' ');
+  const fmtClock = (d) => `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  const allSunBelow = data.sun.every((p) => p.margin < 0);
+  const allSunAbove = data.sun.every((p) => p.margin > 0);
+  const summary = data.crossings.length === 0
+    ? allSunBelow
+      ? 'Sun stays below the horizon all day — no rise/set.'
+      : 'Sun stays above the horizon all day — no rise/set.'
+    : data.crossings.map((c) => `${c.type} ${fmtClock(c.time)} UTC (az ${c.az.toFixed(0)}°)`).join(' · ');
+  return (
+    <div data-testid="horizon-chart" role="img"
+      aria-label={`Sun and Earth paths over the real horizon at ${data.site.name} on ${data.dayStart.toISOString().slice(0, 10)}. ${summary}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" aria-hidden="true">
+        {yTicks.map((e) => (
+          <g key={e}>
+            <line x1={PL} y1={y(e)} x2={W - PR} y2={y(e)} stroke="#ffffff" strokeOpacity="0.08" />
+            <text x={PL - 5} y={y(e) + 3} textAnchor="end" fontSize="9" fill="#94a3b8">
+              {e > 0 ? `+${e}°` : `${e}°`}
+            </text>
+          </g>
+        ))}
+        {AZ_LABELS.map(([az, label]) => (
+          <text key={az} x={x(az)} y={H - 8} textAnchor="middle" fontSize="9" fill="#94a3b8">{label} {az}°</text>
+        ))}
+        <path d={horizonPath} fill="#475569" fillOpacity="0.55" stroke="#94a3b8" strokeWidth="1" />
+        <path d={sunPath} fill="none" stroke="#fbbf24" strokeWidth="2" />
+        {data.sun.map((p) => (
+          <circle key={p.time.toISOString()} cx={x(p.az)} cy={y(p.alt)} r="2" fill="#fbbf24" />
+        ))}
+        <path d={earthPath} fill="none" stroke="#38bdf8" strokeWidth="2" />
+        {data.earth.map((p) => (
+          <circle key={p.time.toISOString()} cx={x(p.az)} cy={y(p.alt)} r="1.5" fill="#38bdf8" />
+        ))}
+        {data.crossings.map((c) => (
+          <g key={c.time.toISOString()}>
+            {c.type === 'rise'
+              ? <polygon points={`${x(c.az)},${y(c.elev) - 7} ${x(c.az) - 5},${y(c.elev) + 3} ${x(c.az) + 5},${y(c.elev) + 3}`} fill="#4ade80" />
+              : <polygon points={`${x(c.az)},${y(c.elev) + 7} ${x(c.az) - 5},${y(c.elev) - 3} ${x(c.az) + 5},${y(c.elev) - 3}`} fill="#f87171" />}
+          </g>
+        ))}
+      </svg>
+      <p className="mt-1 text-[12px] leading-snug text-slate-300">
+        <span className="text-slate-400">▬</span> real LOLA DEM horizon
+        {data.rangeM ? ` (range ${data.rangeM} m, ${data.eyeHeightM} m eye)` : ' (flat 0°, reference only)'}
+        {' · '}<span className="text-amber-300">▬ Sun path</span> (computed, hourly)
+        {' · '}<span className="text-sky-300">▬ Earth path</span> (computed, hourly — short arc, Earth barely moves in a day)
+        {' · '}<span className="text-green-400">▲ rise</span> <span className="text-red-400">▼ set</span> (interpolated between hourly samples)
+      </p>
+      <p className="mt-0.5 text-[12px] font-semibold leading-snug text-slate-200">{summary}</p>
+    </div>
   );
 }
 
@@ -152,7 +244,7 @@ export default function App() {
     ? 'Rover model: real Apollo LRV — Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS.'
     : roverModelStatus === 'fallback'
       ? 'Rover model: code-built fallback — the real Apollo LRV failed to load.'
-      : 'Rover model: loading real Apollo LRV… (code-built rover driving meanwhile)';
+      : 'Rover model: loading real Apollo LRV… (rover appears when ready)';
   const extentKm = (((terrainStatus.halfSizeM ?? 600) * 2 / 1000).toFixed(2).replace(/0$/, '').replace(/\.$/, ''));
   const terrainLine = terrainStatus.state === 'loaded'
     ? `Terrain: real ${terrainStatus.sourceShort || 'LRO LOLA DEM'}, ${terrainStatus.resolutionM} m/px · relief ${Math.round(terrainStatus.reliefM)} m over the ${extentKm} km square${terrainStatus.texture ? ` · ${terrainStatus.texture.label}` : ''}`
@@ -193,16 +285,24 @@ export default function App() {
         setHud({ lat: site.lat, lon: site.lon, speedMs: 0, heading: 0, distanceM: 0,
           heightM: 0, pitchDeg: 0, rollDeg: 0,
           sunAlt: verdict.sun.alt, earthAlt: verdict.earth.alt,
+          sunHorizonDeg: verdict.sunHorizonDeg, earthHorizonDeg: verdict.earthHorizonDeg,
           power: verdict.power, comm: verdict.comm });
         return;
       }
-      const v = roverVerdict(date, r, { powerVerdict, commVerdict });
+      // The LANDING-SITE horizon profile: the rover's own horizon as
+      // it drives is approximated by it (the HUD says so — see the
+      // copy below). Alt/az come from the rover's live position.
+      const v = roverVerdict(date, r, {
+        powerVerdict, commVerdict, horizonProfile: horizonForSite(site.id),
+      });
       setHud({
         lat: v.lat, lon: v.lon, speedMs: r.speedMs, heading: headingDeg(r),
         distanceM: distanceFromStart(r.northM, r.eastM),
         heightM: r.heightM, pitchDeg: (r.pitchRad * 180) / Math.PI,
         rollDeg: (r.rollRad * 180) / Math.PI,
-        sunAlt: v.sun.alt, earthAlt: v.earth.alt, power: v.power, comm: v.comm,
+        sunAlt: v.sun.alt, earthAlt: v.earth.alt,
+        sunHorizonDeg: v.sunHorizonDeg, earthHorizonDeg: v.earthHorizonDeg,
+        power: v.power, comm: v.comm,
       });
     };
     tick();
@@ -272,6 +372,10 @@ export default function App() {
     () => (windowsOpen ? findWindows(date, site, windowDays) : null),
     [windowsOpen, date, site, windowDays],
   );
+  // Sun-path chart for the Evidence modal (one site + one UTC day).
+  // buildSunPathChart is pure and cheap (25 ephemeris calls + 360
+  // horizon lookups); memoised per date/site like the other outputs.
+  const chart = useMemo(() => buildSunPathChart(date, site), [date, site]);
   const toggleCompareSite = (id) => {
     setCompareIds((prev) => (prev.includes(id)
       ? prev.filter((x) => x !== id)
@@ -323,6 +427,7 @@ export default function App() {
             <span data-testid="drive-rover-model">{roverModelLine}</span>
             {' '}Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
             {' '}Lighting: real Sun direction + DEM shadows; faint Earthshine fill; brightness adjusted for readability.
+            {' '}POWER/COMM use the real local horizon from the LOLA DEM (2 m eye; terrain within ~10 km at the south-pole sites, ~360 m at Apollo 15), measured at the landing point — as the rover drives away, that horizon is an approximation of the rover’s own horizon.
             {' '}Wheel dust and tracks are illustrative, not a regolith simulation.
           </p>
           <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
@@ -336,8 +441,10 @@ export default function App() {
             <p>Pitch / roll: <span data-testid="drive-pitch" className="font-bold tabular-nums">{fmt(hud.pitchDeg, 1)}°</span>{' / '}
               <span data-testid="drive-roll" className="font-bold tabular-nums">{fmt(hud.rollDeg, 1)}°</span></p>
             <p>☀️ Sun: <span data-testid="drive-sun-alt" className="font-bold tabular-nums">{fmtSigned(hud.sunAlt)}</span>{' '}
+              <span className="text-slate-400">(local horizon <span data-testid="drive-sun-horizon" className="font-bold tabular-nums">{fmtSigned(hud.sunHorizonDeg)}</span>)</span>{' '}
               <span data-testid="drive-power" className="font-bold" style={{ color: hud.power.color }}>{hud.power.label}</span></p>
             <p>🌍 Earth: <span data-testid="drive-earth-alt" className="font-bold tabular-nums">{fmtSigned(hud.earthAlt)}</span>{' '}
+              <span className="text-slate-400">(local horizon <span data-testid="drive-earth-horizon" className="font-bold tabular-nums">{fmtSigned(hud.earthHorizonDeg)}</span>)</span>{' '}
               <span data-testid="drive-comm" className="font-bold" style={{ color: hud.comm.color }}>{hud.comm.label}</span></p>
           </div>
           <div className="mt-2">
@@ -583,7 +690,7 @@ export default function App() {
               <button type="button" onClick={() => setBriefOpen(true)} aria-label="Open mission brief"
                 className="mt-2 block w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left text-sm font-semibold text-amber-200 hover:border-amber-300">
                 📋 Mission brief — all 14 sites ranked for this date
-                <span className="block text-xs font-normal text-slate-400">Best Sun first, then best Earth — printable</span>
+                <span className="block text-xs font-normal text-slate-400">Best Sun margin above the local horizon first, then best Earth — printable</span>
               </button>
               <button type="button" onClick={() => setEvidenceOpen(true)} aria-label="Open evidence"
                 className="mt-2 block w-full rounded-lg border border-violet-400/40 bg-violet-400/10 px-3 py-2 text-left text-sm font-semibold text-violet-200 hover:border-violet-300">
@@ -614,7 +721,7 @@ export default function App() {
               <button type="button" onClick={() => setCompareOpen(false)} aria-label="Close site comparison"
                 className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕</button>
             </div>
-            <p className="mt-1 text-xs text-slate-400">Tick sites to compare. Sun/Earth altitudes are computed live, flat horizon, ±0.1° geometry.</p>
+            <p className="mt-1 text-xs text-slate-400">Tick sites to compare. Sun/Earth altitudes are computed live against the real local horizon from the LOLA DEM (2 m eye; terrain within ~10 km at the south-pole sites, ~360 m at Apollo 15), ±0.1° geometry.</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {SITES.map((s) => (
                 <button key={s.id} type="button" onClick={() => toggleCompareSite(s.id)}
@@ -663,7 +770,7 @@ export default function App() {
                 className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕</button>
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              From {formatDateUTC(windows.start)} · hourly sampling, flat horizon. Whole-hour counts.
+              From {formatDateUTC(windows.start)} · hourly sampling, real local horizon from the LOLA DEM. Whole-hour counts.
             </p>
             <div className="mt-2 flex gap-1.5" role="group" aria-label="Window length">
               {[14, 30].map((d) => (
@@ -714,7 +821,7 @@ export default function App() {
               <button type="button" onClick={() => setBriefOpen(false)} aria-label="Close mission brief"
                 className="no-print shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕</button>
             </div>
-            <p className="mt-1 text-xs text-slate-400">Ranked best first by Sun altitude (power), then Earth altitude (comms). Flat-horizon geometry, ±0.1°.</p>
+            <p className="mt-1 text-xs text-slate-400">Ranked best first by Sun margin above the local horizon (power), then Earth margin (comms). Real local horizon from the LOLA DEM, ±0.1°.</p>
             <table className="mt-2 w-full text-left text-[13px] leading-snug">
               <thead>
                 <tr className="text-slate-500"><th className="py-1 pr-2">#</th><th className="py-1 pr-2">Site</th><th className="py-1 pr-2">Sun alt</th><th className="py-1 pr-2">Earth alt</th><th className="py-1 pr-2">POWER</th><th className="py-1">COMM</th></tr>
@@ -791,6 +898,29 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+            <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Sun &amp; Earth paths over the real horizon — {site.name}, {date.toISOString().slice(0, 10)}</h3>
+            <p className="mt-1 text-[13px] leading-snug text-slate-300">
+              The visual proof the verdicts come from real terrain: the Sun&apos;s path across the chosen day, plotted against the
+              computed horizon profile. Where the amber line crosses the ridge silhouette, the Sun rises or sets behind real ground.
+            </p>
+            <div className="mt-2"><HorizonChart data={chart} /></div>
+            <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Illumination cross-check — Connecting Ridge CR1</h3>
+            <div data-testid="cr1-validation-badge" className="mt-1 rounded-lg border border-white/15 bg-white/[0.04] p-2 text-[13px] leading-snug text-slate-300">
+              <p>
+                Computed <span className="font-bold text-slate-100">{CR1_VALIDATION.cycle.percent}%</span> Sun-up over{' '}
+                {CR1_VALIDATION.cycle.years} years ({CR1_VALIDATION.cycle.start.slice(0, 10)} → {CR1_VALIDATION.cycle.end.slice(0, 10)},
+                hourly, terrain-aware horizon, 2 m eye) vs published <span className="font-bold text-slate-100">{CR1_VALIDATION.published.percent}%</span> over{' '}
+                {CR1_VALIDATION.published.window} ({CR1_VALIDATION.published.source}) — different windows and methods; a check, not an
+                equality claim.
+              </p>
+              <p className="mt-1">
+                The {(CR1_VALIDATION.published.percent - CR1_VALIDATION.cycle.percent).toFixed(1)}-point gap is not explained by the solar-disc definition ({CR1_VALIDATION.cycle.discTopPercent}% counting any
+                part of the disc, {CR1_VALIDATION.cycle.fullDiscPercent}% full disc) or by sampling (10-minute sampling on the 30-day
+                window agrees to 0.01 points) — the likely causes are terrain-model and window differences. The engine was not
+                adjusted to match. Precomputed offline by {CR1_VALIDATION.generator}; the test suite recomputes the 30-day window
+                live and asserts it equals the shipped number ({CR1_VALIDATION.crossCheck30d.sunUpHours}/{CR1_VALIDATION.crossCheck30d.samples} h).
+              </p>
+            </div>
             <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Drive terrain — real LRO LOLA DEM</h3>
             <p className="mt-1 text-[13px] leading-snug text-slate-300">{TERRAIN_NOTE}</p>
             <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Drive rover — real Apollo LRV model</h3>
