@@ -25,6 +25,7 @@ import {
   speedKmh, distanceFromStart,
 } from './lib/rover.js';
 import LunarScene, { CAMERA_PRESETS } from './components/LunarScene.jsx';
+import { preloadRealRover } from './components/RoverModel.jsx';
 
 const DATE_CHIPS = [
   { label: 'Nov 14 · 12:00 UTC', value: '2026-11-14T12:00' },
@@ -112,6 +113,23 @@ export default function App() {
   // LunarScene); the HUD reports which terrain is under the rover.
   const [terrainStatus, setTerrainStatus] = useState({ siteId: site.id, state: 'loading' });
   const [terrainShading, setTerrainShading] = useState(true);
+  // Real Apollo LRV model state: 'loading' | 'real' | 'fallback'.
+  // The GLB fetch starts on app mount (while the user is still in
+  // orbit view) so it is usually parsed before Drive mode is entered;
+  // LunarScene reports the settled state. The HUD shows it, so the
+  // code-built stand-in is never shown silently.
+  const [roverModelStatus, setRoverModelStatus] = useState('loading');
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL || '/';
+    preloadRealRover(`${base}models/lrv/lunar_roving_vehicle.glb`).catch(() => {
+      // Rejection is cached; LunarScene reports 'fallback' for it.
+    });
+  }, []);
+  const roverModelLine = roverModelStatus === 'real'
+    ? 'Rover model: real Apollo LRV — Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS.'
+    : roverModelStatus === 'fallback'
+      ? 'Rover model: code-built fallback — the real Apollo LRV failed to load.'
+      : 'Rover model: loading real Apollo LRV… (code-built rover driving meanwhile)';
   const terrainLine = terrainStatus.state === 'loaded'
     ? `Terrain: real LRO LOLA DEM, ${terrainStatus.resolutionM} m/px · relief ${Math.round(terrainStatus.reliefM)} m over the 1.2 km square`
     : terrainStatus.state === 'loading'
@@ -242,6 +260,7 @@ export default function App() {
           maxSpeedKmh={maxSpeedKmh}
           terrainShading={terrainShading}
           onTerrainStatus={setTerrainStatus}
+          onRoverModelStatus={setRoverModelStatus}
         />
       </div>
 
@@ -258,8 +277,9 @@ export default function App() {
               className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕ Back to orbit</button>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            Real Apollo LRV model: Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS.
-            Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
+            <span data-testid="drive-rover-model">{roverModelLine}</span>
+            {' '}Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
+            {' '}Wheel dust and tracks are illustrative, not a regolith simulation.
           </p>
           <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
             <p>Speed: <span data-testid="drive-speed" className="font-bold tabular-nums">{fmt(speedKmh({ speedMs: hud.speedMs }), 1)} km/h</span>

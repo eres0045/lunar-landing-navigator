@@ -31,7 +31,8 @@ import { SITES } from '../lib/data.js';
 import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
 import { loadTerrainGrid, createTerrainLookup } from '../lib/terrain.js';
 import { buildTerrainGeometry, terrainRingPoints } from './terrainMesh.js';
-import { createRoverGroup, loadRealRover } from './RoverModel.jsx';
+import { createRoverGroup, loadRealRover, driverCameraPose } from './RoverModel.jsx';
+import { DustSystem, TrackTrail } from './RoverEffects.js';
 
 const D2R = Math.PI / 180;
 
@@ -98,7 +99,7 @@ const POWER_COLOR = { SUNLIT: 0x34d399, 'LOW SUN': 0xfbbf24, DARK: 0x94a3b8 };
 export default function LunarScene({
   date, site, verdicts, cameraCmd, onSelectSite,
   driveMode = false, driveCam = 'chase', driveInputRef, roverStateRef, maxSpeedKmh = 13,
-  terrainShading = true, onTerrainStatus,
+  terrainShading = true, onTerrainStatus, onRoverModelStatus,
 }) {
   const mountRef = useRef(null);
   const [webglOk, setWebglOk] = useState(false);
@@ -370,6 +371,7 @@ export default function LunarScene({
     // Drive-scene API for the terrain effect above: swap the ground
     // mesh, re-seat rings + rocks on the DEM, toggle DEM shading.
     let terrainActive = false;
+    let terrainLookup = null; // feeds the wheel-track ribbon heights
     const updateRingLines = (lookup) => {
       for (const { line, radius, lift } of ringLines) {
         line.geometry.dispose();
@@ -386,6 +388,7 @@ export default function LunarScene({
     driveApiRef.current = {
       applyTerrain(grid, lookup) {
         terrainActive = true;
+        terrainLookup = lookup;
         ground.geometry.dispose();
         ground.geometry = buildTerrainGeometry(grid);
         ground.rotation.x = 0; // heightfield is already in (east, up, north)
@@ -395,6 +398,7 @@ export default function LunarScene({
       },
       clearTerrain() {
         terrainActive = false;
+        terrainLookup = null;
         ground.geometry.dispose();
         ground.geometry = new THREE.CircleGeometry(500, 64);
         ground.rotation.x = -Math.PI / 2;
@@ -411,27 +415,46 @@ export default function LunarScene({
         groundMat.needsUpdate = true;
       },
     };
-    // Real Apollo LRV model (GLB, public/models/lrv/) — loads
-    // asynchronously; the code-built rover drives until it arrives,
-    // and stays if the load fails or the GLB is missing a pivot.
-    // The swap only re-points the `roverParts` binding the animation
-    // loop already reads every frame, so drive physics, HUD, terrain,
-    // and controls are untouched. `roverLoadAlive` guards the swap
-    // if Drive mode / the scene is torn down before the load finishes.
+    // Wheel dust + wheel tracks (illustrative effects — see
+    // RoverEffects.js). The track ribbon follows the DEM through the
+    // live terrain lookup; dust settles on the rover's ground height.
+    const dust = new DustSystem();
+    driveGroup.add(dust.group);
+    const tracks = new TrackTrail({
+      heightAtLocal: (northM, eastM) => (terrainLookup
+        ? terrainLookup.relativeHeightAtLocal(northM, eastM)
+        : 0),
+    });
+    driveGroup.add(tracks.group);
+
+    // Real Apollo LRV model (GLB, public/models/lrv/) — the fetch was
+    // already started on app mount by `preloadRealRover` (App.jsx),
+    // so this usually resolves instantly from the cache; the
+    // code-built rover drives until it arrives, and stays if the load
+    // fails or the GLB is missing a pivot. The swap only re-points
+    // the `roverParts` binding the animation loop already reads every
+    // frame, so drive physics, HUD, terrain, and controls are
+    // untouched. `roverLoadAlive` guards the swap if Drive mode / the
+    // scene is torn down before the load finishes. The HUD reports
+    // the model state via onRoverModelStatus ('loading' / 'real' /
+    // 'fallback') so the stand-in is never shown silently.
     let roverParts = createRoverGroup();
     driveGroup.add(roverParts.group);
     let roverLoadAlive = true;
+    onRoverModelStatus?.('loading');
     loadRealRover(`${base}models/lrv/lunar_roving_vehicle.glb`)
       .then((real) => {
         if (!roverLoadAlive) return;
         driveGroup.remove(roverParts.group);
         roverParts = real;
         driveGroup.add(real.group);
+        onRoverModelStatus?.('real');
       })
       .catch((err) => {
         // 404, corrupt file, slow/failed network, or a missing node —
         // the code-built rover keeps driving; nothing else changes.
         console.warn('[rover] real LRV model unavailable — keeping the code-built rover:', err);
+        onRoverModelStatus?.('fallback');
       });
 
     // Camera orbit state (spherical around the Moon centre).
@@ -489,6 +512,8 @@ export default function LunarScene({
     const clock = new THREE.Clock();
     let elapsed = 0;
     let lastDriveMode = false;
+    let lastTrackSiteId = null;
+    let lastDriveCam = null; // snap the camera on chase<->driver toggle (below)
     const driveLook = new THREE.Vector3(0, 1, 5);
     const animate = () => {
       if (dead) return;
@@ -517,6 +542,12 @@ export default function LunarScene({
         const input = driveInputRef?.current || {};
         if (rover) {
           roverStep(rover, input, dt);
+          // A new site means new terrain — the old trail belongs to
+          // the previous site's ground, so drop it.
+          if (rover.siteId !== lastTrackSiteId) {
+            lastTrackSiteId = rover.siteId;
+            tracks.reset();
+          }
           // Local frame: x = east, y = up, z = north.
           roverParts.group.position.set(rover.eastM, rover.heightM, rover.northM);
           roverParts.group.rotation.order = 'YXZ';
@@ -526,6 +557,10 @@ export default function LunarScene({
           for (const w of Object.values(roverParts.wheels)) w.rotation.x = rover.wheelAngleRad;
           roverParts.steerGroups.front.rotation.y = rover.steerRad;
           roverParts.steerGroups.rear.rotation.y = -rover.steerRad;
+          // Dust at the rear wheels + tracks along the driven path
+          // (illustrative — labelled as such in the HUD/Evidence).
+          dust.update(dt, rover);
+          tracks.update(rover);
 
           // Chase cam (behind/above, follows heading) or driver cam.
           const fwd = new THREE.Vector3(Math.sin(rover.headingRad), 0, Math.cos(rover.headingRad));
@@ -533,15 +568,29 @@ export default function LunarScene({
           let camTarget;
           let lookTarget;
           if (driveCam === 'driver') {
-            // Ahead of the mast/dish (z ≈ +1.3) so the antenna is
-            // behind the camera, not filling the frame.
-            camTarget = pos.clone().addScaledVector(fwd, 1.6).add(new THREE.Vector3(0, 1.5, 0));
-            lookTarget = pos.clone().addScaledVector(fwd, 30).add(new THREE.Vector3(0, 0.6, 0));
+            // driverCameraPose: ahead of the mast/dish and just above
+            // it, so the antenna is behind the camera — a driver's
+            // view over the rover's front. See RoverModel.jsx.
+            const pose = driverCameraPose(pos, rover.headingRad);
+            camTarget = pose.camera;
+            lookTarget = pose.lookAt;
           } else {
             camTarget = pos.clone().addScaledVector(fwd, -7).add(new THREE.Vector3(0, 3.2, 0));
             lookTarget = pos.clone().addScaledVector(fwd, 5).add(new THREE.Vector3(0, 1, 0));
           }
           camera.position.lerp(camTarget, driveCam === 'driver' ? 0.5 : 0.12);
+          // On a chase<->driver toggle, SNAP the camera to the new pose
+          // instead of lerping: the straight lerp path runs through the
+          // rover body and the high-gain dish, so at low frame rates
+          // the view clips through the dish for a visible moment.
+          // The look direction still eases (driveLook lerp below), so
+          // the toggle feels smooth without ever going through metal.
+          if (lastDriveCam === null) {
+            lastDriveCam = driveCam;
+          } else if (driveCam !== lastDriveCam) {
+            lastDriveCam = driveCam;
+            camera.position.copy(camTarget);
+          }
           driveLook.lerp(lookTarget, 0.2);
           camera.lookAt(driveLook);
         }

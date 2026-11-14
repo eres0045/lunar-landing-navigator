@@ -221,8 +221,87 @@ export function wireRealRover(scene) {
  * `{ group, wheels, steerGroups }` shape; rejects on load failure OR
  * on a missing node (via wireRealRover) — either way the caller falls
  * back to the code-built rover.
+ *
+ * The load is CACHED per URL (see `preloadRealRover`): the first call
+ * starts the fetch + parse, every later call for the same URL returns
+ * the same promise, so re-mounts and Drive re-entries never re-fetch
+ * or re-parse the 6.4 MB GLB.
  */
-export async function loadRealRover(url) {
-  const scene = await loadRoverModel(url);
-  return wireRealRover(scene);
+export function loadRealRover(url) {
+  return preloadRealRover(url);
+}
+
+/**
+ * Start loading the real LRV GLB in the background and cache the
+ * promise per URL. Call this EARLY — on app mount, while the user is
+ * still in orbit view — so the model is usually parsed and ready
+ * before Drive mode is ever entered, and the code-built rover never
+ * flashes on screen. Returns the shared promise (resolves to the
+ * wired `{ group, wheels, steerGroups }` shape); a rejection is
+ * cached too, so a failed load stays failed and the caller keeps the
+ * code-built fallback. `resetRealRoverCache()` clears the cache
+ * (tests only).
+ */
+const realRoverCache = new Map();
+export function preloadRealRover(url) {
+  if (!realRoverCache.has(url)) {
+    realRoverCache.set(url, loadRoverModel(url).then((scene) => wireRealRover(scene)));
+  }
+  return realRoverCache.get(url);
+}
+
+/** Clear the preload cache (tests only — never in the app). */
+export function resetRealRoverCache() {
+  realRoverCache.clear();
+}
+
+/**
+ * Driver-camera pose for Drive mode, measured against the REAL GLB
+ * (not the code-built rover): the high-gain dish sits on the rover's
+ * LEFT side (x +0.16…+0.91 m, front face z ≈ +1.55 m, mast top
+ * y ≈ 1.86 m — measured from the shipped GLB; see the RoverModel
+ * tests, which assert these bounds from the file itself). A centred
+ * camera ahead of the dish (the first attempt: 2.3 m ahead, 1.9 m
+ * up) clears the dish but sees NO rover at all — it floats in front
+ * of the vehicle like a drone. So the camera instead sits in the
+ * driver's seat on the OPPOSITE side from the dish: 0.6 m to the
+ * right of centre (the right seat, outer edge), 0.65 m ahead of the
+ * centre, eye height 1.45 m — every corner of the dish's bounding
+ * box is then 40°+ off the forward axis, outside the ~37°
+ * horizontal half-field of view, while the front fenders/wheels and
+ * the control console sit at the bottom of the frame: a driver's
+ * view over the rover's front. It also clears the code-built
+ * rover's centred dish well enough (edge of frame at worst — that
+ * rover only appears if the GLB fails to load).
+ *
+ * Returns `{ camera, lookAt }` as new THREE.Vector3s; `roverPos` is
+ * never mutated. `headingRad` is clockwise from north (0 = north),
+ * the same convention as the rover physics. Lateral is measured
+ * along the rover's right vector (negative = the seat opposite the
+ * dish); forward along the heading.
+ */
+export const DRIVER_CAM = {
+  /** Metres to the right of the rover centre (negative = opposite the dish). */
+  lateralM: -0.6,
+  /** Metres ahead of the rover centre (driver's seat / console). */
+  forwardM: 0.65,
+  /** Camera (eye) height above the ground. */
+  heightM: 1.45,
+  /** Look target: metres ahead of the rover centre. */
+  lookAheadM: 30,
+  /** Look target height above the ground. */
+  lookHeightM: 0.6,
+};
+
+export function driverCameraPose(roverPos, headingRad) {
+  const fwd = new THREE.Vector3(Math.sin(headingRad), 0, Math.cos(headingRad));
+  const right = new THREE.Vector3(Math.cos(headingRad), 0, -Math.sin(headingRad));
+  return {
+    camera: roverPos.clone()
+      .addScaledVector(fwd, DRIVER_CAM.forwardM)
+      .addScaledVector(right, DRIVER_CAM.lateralM)
+      .add(new THREE.Vector3(0, DRIVER_CAM.heightM, 0)),
+    lookAt: roverPos.clone().addScaledVector(fwd, DRIVER_CAM.lookAheadM)
+      .add(new THREE.Vector3(0, DRIVER_CAM.lookHeightM, 0)),
+  };
 }

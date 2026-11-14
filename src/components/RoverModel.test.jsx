@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   createRoverGroup, loadRoverModel, wireRealRover, loadRealRover,
+  preloadRealRover, resetRealRoverCache, driverCameraPose, DRIVER_CAM,
 } from './RoverModel.jsx';
 
 /** Fake scene with the real GLB's node tree (names + nesting).
@@ -157,5 +158,104 @@ describe('fallback path (GLB load failure → code-built rover)', () => {
       parts = createRoverGroup();
     }
     expect(parts.group.name).toBe('code-built-lrv');
+  });
+});
+
+describe('preloadRealRover cache (background load while in orbit view)', () => {
+  // Same dead-port pattern as the fallback tests: connection refused
+  // rejects genuinely and cleans the FileLoader entry up.
+  const dead = (name) => `http://127.0.0.1:1/models/lrv/${name}.glb`;
+
+  afterEach(() => resetRealRoverCache());
+
+  it('returns the SAME promise for repeat calls with the same URL', () => {
+    const a = preloadRealRover(dead('cache-a'));
+    const b = preloadRealRover(dead('cache-a'));
+    expect(a).toBe(b);
+    // The shared promise rejects (dead port) — silence it here.
+    a.catch(() => {});
+  });
+
+  it('loadRealRover reuses the preloaded promise for the same URL', () => {
+    const preloaded = preloadRealRover(dead('cache-b'));
+    expect(loadRealRover(dead('cache-b'))).toBe(preloaded);
+    preloaded.catch(() => {});
+  });
+
+  it('a cached rejection stays rejected (failed load → fallback, not a hang)', async () => {
+    const p = preloadRealRover(dead('cache-c'));
+    await expect(p).rejects.toThrow();
+    await expect(preloadRealRover(dead('cache-c'))).rejects.toThrow();
+  });
+
+  it('resetRealRoverCache starts a fresh load', () => {
+    const a = preloadRealRover(dead('cache-d'));
+    a.catch(() => {});
+    resetRealRoverCache();
+    const b = preloadRealRover(dead('cache-d'));
+    expect(b).not.toBe(a);
+    b.catch(() => {});
+  });
+});
+
+describe('driverCameraPose (driver cam clears the high-gain dish)', () => {
+  it('sits in the right seat (opposite the dish), eye height, looking far ahead', () => {
+    const pos = new THREE.Vector3(0, 0, 0);
+    const { camera, lookAt } = driverCameraPose(pos, 0); // heading north
+    expect(camera.x).toBeCloseTo(DRIVER_CAM.lateralM, 6);
+    expect(camera.y).toBeCloseTo(DRIVER_CAM.heightM, 6);
+    expect(camera.z).toBeCloseTo(DRIVER_CAM.forwardM, 6);
+    expect(lookAt.x).toBeCloseTo(0, 6);
+    expect(lookAt.y).toBeCloseTo(DRIVER_CAM.lookHeightM, 6);
+    expect(lookAt.z).toBeCloseTo(DRIVER_CAM.lookAheadM, 6);
+  });
+
+  it('follows the heading (east = +X in the local frame)', () => {
+    const pos = new THREE.Vector3(10, 2, -5);
+    const { camera, lookAt } = driverCameraPose(pos, Math.PI / 2);
+    // Heading east: forward = +X, right = −Z, so the seat offset is in −Z.
+    expect(camera.x).toBeCloseTo(10 + DRIVER_CAM.forwardM, 6);
+    expect(camera.y).toBeCloseTo(2 + DRIVER_CAM.heightM, 6);
+    expect(camera.z).toBeCloseTo(-5 - DRIVER_CAM.lateralM, 6);
+    expect(lookAt.x).toBeCloseTo(10 + DRIVER_CAM.lookAheadM, 6);
+    expect(lookAt.z).toBeCloseTo(-5, 6);
+  });
+
+  it('keeps the REAL dish far outside the view: every dish-bbox corner is >40° off the forward axis', async () => {
+    // The dish is the mesh whose bbox hangs high (min y > 1.0 m) at
+    // the front (max z > 1.5 m) and reaches the model's top (y ≈ 1.86 m)
+    // — measured from the shipped GLB itself. The camera's horizontal
+    // half-field of view is ~37° at 16:10 (50° vertical FOV), so 40°+
+    // is clear with margin even on wider screens.
+    const buf = readFileSync(join(process.cwd(), 'public/models/lrv/lunar_roving_vehicle.glb'));
+    const bytes = new Uint8Array(buf);
+    const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '');
+    const lrv = gltf.scene.getObjectByName('lrv');
+    let dish = null;
+    lrv.traverse((o) => {
+      if (!o.isMesh) return;
+      const b = new THREE.Box3().setFromObject(o);
+      if (b.min.y > 1.0 && b.max.y > 1.8 && b.max.z > 1.5) dish = b;
+    });
+    expect(dish).toBeTruthy();
+    const { camera } = driverCameraPose(new THREE.Vector3(0, 0, 0), 0);
+    const fwd = new THREE.Vector3(0, 0, 1);
+    const corners = [];
+    for (const x of [dish.min.x, dish.max.x]) {
+      for (const y of [dish.min.y, dish.max.y]) {
+        for (const z of [dish.min.z, dish.max.z]) corners.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    for (const c of corners) {
+      const dir = c.clone().sub(camera).normalize();
+      const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dir.dot(fwd)))) * 180) / Math.PI;
+      expect(angleDeg).toBeGreaterThan(40);
+    }
+  });
+
+  it('does not mutate the rover position', () => {
+    const pos = new THREE.Vector3(1, 2, 3);
+    driverCameraPose(pos, 0.7);
+    expect(pos.toArray()).toEqual([1, 2, 3]);
   });
 });

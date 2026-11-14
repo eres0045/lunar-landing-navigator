@@ -182,8 +182,13 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.getByTestId('drive-lat').textContent).toContain('-85.9900°');
     expect(screen.getByTestId('drive-lon').textContent).toContain('-0.1250°');
     expect(screen.getByTestId('drive-distance').textContent).toContain('0.0 m');
-    // Real LRV model label is stated in the HUD (and on the entry button).
-    expect(within(hud).getByText(/Real Apollo LRV model: Deutsches Museum \| Digital, CC-BY-SA 4\.0/)).toBeTruthy();
+    // Rover-model status line: jsdom has no WebGL, so the scene never
+    // reports back and the HUD honestly says the real model is still
+    // loading (code-built rover driving meanwhile).
+    expect(screen.getByTestId('drive-rover-model').textContent)
+      .toContain('Rover model: loading real Apollo LRV…');
+    // The illustrative-effects label is stated in the HUD.
+    expect(within(hud).getByText(/Wheel dust and tracks are illustrative, not a regolith simulation\./)).toBeTruthy();
     // Camera toggle + max-speed control + touch buttons exist.
     expect(screen.getByTestId('drive-camera-toggle')).toBeTruthy();
     expect(screen.getByLabelText('Maximum drive speed in kilometres per hour')).toBeTruthy();

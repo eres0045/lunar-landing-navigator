@@ -82,6 +82,42 @@ handbook's precise wheelbase/track, and says so above.
   code-built rover on ANY failure (404, corrupt file, network error,
   or a missing node — `wireRealRover` throws naming the node). The
   swap is guarded if Drive mode is exited before the load finishes.
+- **Preload (2026-11-14):** the fetch starts on app mount, not on
+  Drive entry — `App.jsx` calls `preloadRealRover(url)`, which caches
+  the load promise per URL, so by the time the user opens Drive mode
+  the 6.4 MB GLB is usually parsed and the swap already happened; the
+  code-built rover no longer flashes on first entry. `loadRealRover`
+  reuses the same cached promise, so re-mounts never re-fetch. The
+  HUD reports the model state (`drive-rover-model`): loading / real /
+  fallback — the stand-in is never shown silently.
+- **Driver cam (2026-11-14):** the first driver cam (1.6 m ahead,
+  1.5 m up) sat 5 cm in front of the dish and below its top, so the
+  dish filled the frame. Measured from the shipped GLB: dish front
+  face z ≈ +1.55 m, mast top y ≈ 1.86 m, dish on the rover's LEFT
+  (x +0.16…+0.91 m). A centred camera past the dish (2.3 m ahead,
+  1.9 m up) cleared it but saw no rover at all — a drone view, not a
+  driver's view — so `driverCameraPose()` in `RoverModel.jsx` now
+  sits the camera in the driver's seat on the OPPOSITE side from the
+  dish: 0.6 m right of centre, 0.65 m ahead, eye height 1.45 m,
+  looking 30 m ahead at 0.6 m up. Every corner of the dish's
+  bounding box is 40°+ off the forward axis (horizontal half-FOV
+  ~37°), while the front fenders/wheels and console sit at the
+  bottom of the frame. The same pose roughly clears the code-built
+  rover's centred dish (edge of frame at worst). Tests assert the
+  pose against the shipped GLB's own dish bounding box. The
+  chase↔driver toggle also SNAPS the camera to the new pose instead
+  of lerping — the straight lerp path runs through the rover body
+  and the dish, so at low frame rates the view clipped through the
+  dish mid-transition; the look direction still eases.
+- **Dust + tracks (2026-11-14):** `RoverEffects.js` — wheel dust
+  (a fixed 48-sprite pool spawned at the rear wheel contact points
+  while |speed| > 0.5 m/s, ~6 particles per metre driven, ballistic
+  fall at lunar 1.62 m/s², fading over ~1.2 s) and wheel tracks (one
+  dark ribbon per side at the wheel lines, sampled every 0.75 m,
+  capped at 400 samples ≈ 300 m, following the DEM heights). Both
+  are ILLUSTRATIVE — labelled in the HUD and Evidence, not regolith
+  physics — and cheap: no per-frame allocation, two pre-allocated
+  ribbon meshes.
 - **Tests:** `src/components/RoverModel.test.jsx` — wiring from a fake
   scene, throws on a missing wheel/steer/`lrv` node, the shipped GLB
   itself parsed + wired (tri count + bbox asserted), and the fallback
@@ -170,7 +206,12 @@ code-built until this model arrived via Space ROS.
   flight vehicle: details and proportions are the Deutsches Museum
   model's, scaled to the published dimensions. The code-built rover
   (simplified primitives: seats, mast, antenna, fenders) remains as
-  the load-failure fallback, and drives while the GLB loads.
+  the load-failure fallback, and drives while the GLB loads (usually
+  not at all now — the GLB is preloaded from app mount).
+- Wheel dust and track marks are **illustrative effects**, not
+  regolith physics: no dust-ballistics model beyond a 1.62 m/s² fall,
+  no sinkage, no track depth — they show where the wheels have been,
+  not what the regolith did.
 - The real LRV steers front AND rear wheels in opposite directions;
   the model does the same (rear pivot gets −steerRad).
 - Sun/Earth verdicts in Drive mode use the flat-horizon geometric
