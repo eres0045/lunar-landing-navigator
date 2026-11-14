@@ -322,7 +322,7 @@ export default function App() {
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{DISCLAIMER}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
                 Moon texture is illustrative; markers sit at the published coordinates on the sphere grid. Terrain is a smooth sphere, not a DEM.
-                LRO model: NASA, public domain. Moon &amp; Sun textures: Solar System Scope, CC BY 4.0. Earth: NASA Blue Marble.
+                LRO model: NASA, public domain. Moon texture: three.js example, NASA lunar imagery. Sun texture: Solar System Scope, CC BY 4.0. Earth: NASA Blue Marble.
               </p>
             </>
           )}
