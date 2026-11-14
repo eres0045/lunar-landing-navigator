@@ -18,6 +18,7 @@ import {
   compareSites, rankSites, findWindows, SOURCES, METHOD,
   REFERENCE_VALUES, PUBLISHED_ILLUMINATION, DISCLAIMER,
   POWER_RULE, COMM_RULE, powerVerdict, commVerdict, TERRAIN_NOTE,
+  ROVER_NOTE,
 } from './lib/data.js';
 import {
   LRV, createRover, roverVerdict, headingDeg,
@@ -257,7 +258,7 @@ export default function App() {
               className="shrink-0 rounded-md border border-white/15 bg-white/[0.08] px-2 py-0.5 text-xs font-bold text-slate-200">✕ Back to orbit</button>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            Code-built rover modelled on the Apollo LRV — not the flight vehicle.
+            Real Apollo LRV model: Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS.
             Physics is a kinematic approximation. <span data-testid="drive-terrain">{terrainLine}</span>
           </p>
           <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-white/[0.05] p-2 text-[13px] leading-snug">
@@ -422,7 +423,7 @@ export default function App() {
               <button type="button" onClick={enterDrive} aria-label="Drive on the surface"
                 className="mt-2 block w-full rounded-lg border border-rose-400/40 bg-rose-400/10 px-3 py-2 text-left text-sm font-semibold text-rose-200 hover:border-rose-300">
                 🚀 Drive on the surface — explore {site.name} by rover
-                <span className="block text-xs font-normal text-slate-400">Code-built rover modelled on the Apollo LRV · WASD / arrows to drive, Space to brake, Esc to return to orbit</span>
+                <span className="block text-xs font-normal text-slate-400">Real Apollo LRV model · WASD / arrows to drive, Space to brake, Esc to return to orbit</span>
               </button>
 
               {/* Site picker */}
@@ -530,6 +531,7 @@ export default function App() {
                 Drive terrain is the real LRO LOLA DEM (10–20 m/px, NASA public domain) — see Evidence.
                 No sub-10 m boulders or craters are resolved; the scattered drive-scene rocks are decorative, with no collision.
                 LRO model: NASA, public domain. Moon texture: three.js example, NASA lunar imagery. Sun texture: Solar System Scope, CC BY 4.0. Earth: NASA Blue Marble.
+                Rover model: Deutsches Museum | Digital, CC-BY-SA 4.0, via NASA Space ROS — see Evidence.
               </p>
             </>
           )}
@@ -725,6 +727,8 @@ export default function App() {
             </table>
             <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Drive terrain — real LRO LOLA DEM</h3>
             <p className="mt-1 text-[13px] leading-snug text-slate-300">{TERRAIN_NOTE}</p>
+            <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Drive rover — real Apollo LRV model</h3>
+            <p className="mt-1 text-[13px] leading-snug text-slate-300">{ROVER_NOTE}</p>
             <h3 className="mt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Sources</h3>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] text-slate-300">
               {SOURCES.map((s) => (

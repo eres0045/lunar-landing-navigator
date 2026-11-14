@@ -1,9 +1,12 @@
 # Drive Mode — Rover Notes
 
 Drive mode drops the camera to the surface at the selected site and lets
-you drive a rover across it. The rover is **code-built from three.js
-primitives, modelled on the Apollo Lunar Roving Vehicle (LRV)** — it is
-labelled as such in the Drive HUD and is NOT the flight vehicle.
+you drive a rover across it. The rover is the **real Apollo LRV mesh** —
+the Deutsches Museum "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, converted
+from the NASA Space ROS COLLADA files to a decimated GLB (pipeline below).
+The **code-built rover** (three.js primitives, same published dimensions)
+remains as the fallback: it drives while the GLB loads, and permanently
+if the GLB fails to load or is missing a pivot.
 
 ## Apollo LRV dimensions — verified published figures
 
@@ -32,23 +35,63 @@ top speed (13 / 14 / 17 / 18 km/h depending on design vs achieved vs
 rounded). The model takes the NSSDCA figures as primary and the
 handbook's precise wheelbase/track, and says so above.
 
-## Future swap-in candidate (NOT downloaded — do not retry)
+## Real model — DONE (2026-11-14)
 
-- **Sketchfab "Mondfahrzeug (Lunar Rover)"** by Deutsches Museum |
-  Digital — https://sketchfab.com/3d-models/mondfahrzeug-lunar-rover-acb3f8645a69493cb211a62b40d66aab
-- Licence: **CC-BY-SA 4.0** (as listed on Sketchfab).
-- **464,143 faces** — needs mesh simplification before web use.
-- Status: the Sketchfab download is **blocked from this side**
-  (three different attempts, all HTTP 401). **Do not retry the
-  download and do not ask anyone to re-enter a token.** When a GLB
-  becomes available by another route, simplify it first, then swap it
-  in through `loadRoverModel(url)` (see below).
+- **Source:** NASA Space ROS PR space-ros/simulation#32 (fork
+  JasperGrant/simulation, branch summer_sprint, commit
+  0551f2cca567bb90811c7c214bcc542fc7a8e60d), the Deutsches Museum
+  "Mondfahrzeug" mesh converted to COLLADA — files
+  `lunar_roving_vehicle.dae`, `wheel_left.dae`, `wheel_right.dae`,
+  `wheel_cover_L/R_F/B.dae`, 7 × 2048×2048 PNG textures. Kept in
+  `../raw-lrv/` (102 MB of sources — NOT shipped to the site).
+- **Licence: CC-BY-SA 4.0** — attribution to **Deutsches Museum |
+  Digital** is REQUIRED, plus credit to **Jasper Grant / NASA Space
+  ROS**. ShareAlike applies to the adapted mesh. The attribution is
+  in the Drive HUD, the panel credits, and the Evidence modal
+  ("Drive rover — real Apollo LRV model"), and in the SOURCES list.
+- **Pipeline (Blender 4.2.0, `~/workspace/tmp-lrv/lrv-build/convert.py`):**
+  DAE import → decimate (Blender Decimate modifier) → scale to the
+  published LRV dimensions → assemble → GLB export.
+  - Decimate: body 0.2× (271,486 → 54,297 tris), each wheel 0.2×
+    (~44,000 → ~8,800 tris), each wheel cover 0.5× (~3,600–4,150 →
+    ~1,785–2,074 tris). Imported parts totalled 371,237 tris before
+    decimation (Sketchfab lists 464,143 faces for the source model);
+    **the shipped GLB is 97,340 tris**.
+  - Scale: body length 2.964 → 3.1 m, width 1.553 → 1.83 m; wheel
+    radius 0.358 → 0.409 m (diameter 0.818 m) — the verified NSSDCA
+    figures in the table above.
+  - Textures: 7 × 2048×2048 PNG → **1024×1024 JPEG**, packed into the
+    GLB. Shipped file: `public/models/lrv/lunar_roving_vehicle.glb`,
+    6,361,612 bytes.
+  - Node tree (verified by re-importing the GLB into Blender):
+    EMPTY `lrv` (root, origin, ground y=0) → MESH `body` (54,297 tris,
+    8 materials) + EMPTY `steer_front` (0, 0.409, +1.145) → `cover_L_F`,
+    `cover_R_F`, `wheel_fl`, `wheel_fr` + EMPTY `steer_rear`
+    (0, 0.409, −1.145) → `cover_L_B`, `cover_R_B`, `wheel_rl`,
+    `wheel_rr`. Forward = +Z, up = +Y — the same convention as the
+    code-built rover. Wheel meshes are centred on their axle and their
+    local X axis IS the axle, so `rotation.x` spins them about it.
+  - Assembled bbox: X width ~2.14 m, Y height 0–1.86 m, Z length
+    ~3.15 m (the 1.86 m height is the mast/antenna; the NSSDCA 1.14 m
+    is the chassis max — the museum mesh includes the tall antenna).
+- **Swap-in:** `loadRealRover(url)` in `RoverModel.jsx` loads the GLB
+  and `wireRealRover(scene)` wires it into the `{ group, wheels,
+  steerGroups }` shape the animation loop already uses — no physics,
+  HUD, terrain, or control changes. `LunarScene.jsx` starts with the
+  code-built rover, swaps the GLB in when it arrives, and keeps the
+  code-built rover on ANY failure (404, corrupt file, network error,
+  or a missing node — `wireRealRover` throws naming the node). The
+  swap is guarded if Drive mode is exited before the load finishes.
+- **Tests:** `src/components/RoverModel.test.jsx` — wiring from a fake
+  scene, throws on a missing wheel/steer/`lrv` node, the shipped GLB
+  itself parsed + wired (tri count + bbox asserted), and the fallback
+  path (load failure → code-built rover).
 
 No freely downloadable Apollo LRV or VIPER model exists from any
 official NASA source (NASA 3D Resources catalogue has neither;
 Smithsonian holds the LRV test unit as CC0 object/images only, no 3D
-scan; the only VIPER model found is paid). That is why the rover is
-code-built.
+scan; the only VIPER model found is paid). That is why the rover was
+code-built until this model arrived via Space ROS.
 
 ## Architecture
 
@@ -81,13 +124,15 @@ code-built.
   roll follow the real relief — no other code changes.
   `resetSurfaceHeightAt()` restores the smooth sphere (used by tests
   and as the fallback if a grid fails to load).
-- **GLB swap hook** — `loadRoverModel(url)` in
-  `app/src/components/RoverModel.jsx` loads any GLB via three's
-  GLTFLoader. The code-built group exposes `{ group, wheels,
-  steerGroups }` (front/rear steer pivots yaw with steering; wheels
-  spin with speed). A swapped-in GLB replaces the group with no
-  changes to drive physics, HUD, or terrain — only its wheel/steer
-  pivots need wiring (or drive it as one rigid group).
+- **GLB swap** — `loadRealRover(url)` in
+  `app/src/components/RoverModel.jsx` loads the real-LRV GLB via
+  three's GLTFLoader and `wireRealRover(scene)` wires its wheel/steer
+  pivots into `{ group, wheels, steerGroups }` — the same shape the
+  code-built group exposes (front/rear steer pivots yaw with steering;
+  wheels spin with speed). The swapped-in GLB replaces the group with
+  no changes to drive physics, HUD, or terrain. `LunarScene.jsx`
+  starts on the code-built rover and swaps the GLB in when it arrives;
+  any load/wiring failure keeps the code-built rover (see above).
 - **Controls** — WASD / arrow keys (W/↑ forward, S/↓ reverse, A/D or
   ←/→ steer), Space = brake, Esc = back to orbit. On-screen
   hold-to-drive buttons (▲ ▼ ◀ ▶ ⏹) via pointerdown/up. Keys are
@@ -120,9 +165,12 @@ code-built.
   (Malapert: +17.7 m after 500 m north). Still NOT resolved: anything
   below ~10–20 m (boulders, small craters); the scattered rocks are
   decorative (no collision).
-- The rover is **code-built, not the real vehicle**: proportions
-  follow the verified LRV dimensions, but details (seats, mast,
-  antenna, fenders) are simplified primitives.
+- The rover is now the **real LRV mesh** (see above), not a
+  primitive approximation — but it is still a museum mesh, not the
+  flight vehicle: details and proportions are the Deutsches Museum
+  model's, scaled to the published dimensions. The code-built rover
+  (simplified primitives: seats, mast, antenna, fenders) remains as
+  the load-failure fallback, and drives while the GLB loads.
 - The real LRV steers front AND rear wheels in opposite directions;
   the model does the same (rear pivot gets −steerRad).
 - Sun/Earth verdicts in Drive mode use the flat-horizon geometric

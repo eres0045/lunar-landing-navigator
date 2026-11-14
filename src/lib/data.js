@@ -194,8 +194,12 @@ export const PUBLISHED_ILLUMINATION = [
 export const TERRAIN_NOTE =
   'Drive mode runs on the real LRO LOLA elevation model: one 1200 m × 1200 m grid per site, sampled from LDEM_85S_10M (10 m/px, 10 sites) or LDEM_80S_20M (20 m/px: Cabeus, Mons Mouton Plateau, Nobile Rim 2), LRO-L-LOLA-4-GDR-V1.0, NASA public domain. Heights are metres above the 1737.4 km reference sphere, shown relative to the landing point (landing point = 0 m); the rover follows them by bilinear interpolation, and the ground mesh is displaced from the same grid with elevation-tint + slope shading computed from the real heights — no imagery texture (none was obtainable: no LROC texture could be fetched, so nothing fake is substituted). Limits: 10–20 m resolution — no sub-10 m boulders or small craters are resolved, the scattered drive-scene rocks are decorative with no collision, and Sun/Earth verdicts still use the flat-horizon model (no terrain shadowing). Full provenance, per-site relief and verification: public/terrain/PROVENANCE.md.';
 
+export const ROVER_NOTE =
+  'Drive mode uses the real Apollo LRV mesh: Deutsches Museum | Digital, "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, via NASA Space ROS (space-ros/simulation#32) — DAE → Blender decimate (body 0.2×, wheels 0.2×, covers 0.5×; 371,237 → 97,340 tris) → GLB, textures 2048px PNG → 1024px JPEG, scaled to the published LRV dimensions (3.1 m long, 1.83 m track, 0.818 m wheels, ground at y=0). ShareAlike applies to the adapted mesh. The code-built rover remains as the fallback if the GLB fails to load. Full pipeline: ROVER.md.';
+
 /** Sources behind the app (SOURCES.md §A5 + §B + §C). */
 export const SOURCES = [
+  { label: 'Apollo LRV model — Deutsches Museum | Digital, "Mondfahrzeug (Lunar Rover)", CC-BY-SA 4.0, via NASA Space ROS (space-ros/simulation#32)', url: 'https://sketchfab.com/3d-models/mondfahrzeug-lunar-rover-acb3f8645a69493cb211a62b40d66aab' },
   { label: 'NASA — Artemis III landing regions update (Oct 28, 2024): the 9 current regions', url: 'https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/' },
   { label: 'Bian et al. 2025, Table 4 — region-centre coordinates as tabulated from NASA 2024 (pre-print, not peer-reviewed)', url: 'https://www.preprints.org/frontend/manuscript/571f3d7ec0e372983396865e64096f66/download_pub' },
   { label: 'Gläser et al. 2014 — Connecting Ridge illumination (DLR EPSC Abstracts)', url: 'https://elib.dlr.de/id/eprint/94242/contents' },

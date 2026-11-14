@@ -182,8 +182,8 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     expect(screen.getByTestId('drive-lat').textContent).toContain('-85.9900°');
     expect(screen.getByTestId('drive-lon').textContent).toContain('-0.1250°');
     expect(screen.getByTestId('drive-distance').textContent).toContain('0.0 m');
-    // Code-built label is stated in the HUD (and on the entry button).
-    expect(within(hud).getByText(/Code-built rover modelled on the Apollo LRV/)).toBeTruthy();
+    // Real LRV model label is stated in the HUD (and on the entry button).
+    expect(within(hud).getByText(/Real Apollo LRV model: Deutsches Museum \| Digital, CC-BY-SA 4\.0/)).toBeTruthy();
     // Camera toggle + max-speed control + touch buttons exist.
     expect(screen.getByTestId('drive-camera-toggle')).toBeTruthy();
     expect(screen.getByLabelText('Maximum drive speed in kilometres per hour')).toBeTruthy();

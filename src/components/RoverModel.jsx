@@ -1,31 +1,34 @@
 /**
- * RoverModel — the code-built lunar rover for Drive mode.
+ * RoverModel — the lunar rover for Drive mode.
  *
- * The rover is built from three.js primitives, modelled on the Apollo
- * LRV's REAL published dimensions (src/lib/rover.js LRV — NASA NSSDCA
- * + Boeing LRV Operations Handbook; cited per-dimension in ROVER.md).
- * It is labelled in-app as code-built, NOT the flight vehicle.
+ * Drive mode now uses the REAL Apollo LRV mesh: the Deutsches Museum
+ * "Mondfahrzeug (Lunar Rover)" (CC-BY-SA 4.0), converted from the NASA
+ * Space ROS COLLADA files to a decimated GLB (see ROVER.md for the
+ * pipeline, face counts, and attribution). It is loaded asynchronously
+ * by `loadRealRover(url)` and wired by `wireRealRover(scene)`.
  *
- * Model space: forward = +Z, up = +Y, metres. Wheel centres sit at
- * ±track/2 in X and ±wheelbase/2 in Z; wheel radius = 0.409 m, so the
- * chassis underside sits at the 0.36 m ground clearance.
+ * The CODE-BUILT rover below (three.js primitives, modelled on the
+ * Apollo LRV's REAL published dimensions — src/lib/rover.js LRV, NASA
+ * NSSDCA + Boeing LRV Operations Handbook; cited per-dimension in
+ * ROVER.md) remains as the fallback: it drives while the GLB loads,
+ * and permanently if the GLB fails to load or is missing a pivot.
  *
- * `createRoverGroup()` returns { group, wheels, steerGroups }:
+ * Model space (both rovers): forward = +Z, up = +Y, metres. Wheel
+ * centres sit at ±track/2 in X and ±wheelbase/2 in Z; wheel radius =
+ * 0.409 m, so the chassis underside sits at the 0.36 m ground clearance.
+ *
+ * `createRoverGroup()` and `wireRealRover(scene)` return the SAME shape
+ * `{ group, wheels, steerGroups }`:
  *  - wheels: { fl, fr, rl, rr } — spin these with
- *    mesh.rotation.x = state.wheelAngleRad;
+ *    mesh.rotation.x = state.wheelAngleRad (the real model's wheel
+ *    meshes are centred on their axle and their local X axis IS the
+ *    axle, so rotation.x spins them exactly like the code-built ones);
  *  - steerGroups: { front, rear } — yaw these with
  *    group.rotation.y = state.steerRad (front; the real LRV steers
  *    front AND rear, in opposite directions — rear gets -steerRad).
  *
- * `loadRoverModel(url)` is the generic GLB hook for the future
- * swap-in: the Sketchfab "Mondfahrzeug (Lunar Rover)" by Deutsches
- * Museum (CC-BY-SA 4.0, 464,143 faces — needs simplification first;
- * see ROVER.md). A GLB loaded through it replaces the code-built
- * group with NO changes to drive physics, HUD, or terrain — the
- * caller only has to wire the returned scene's wheel/steer pivots
- * (or drive it as one rigid group). The download is currently
- * blocked from this side (Sketchfab 401), so this is a hook point
- * only — nothing calls it yet.
+ * The animation loop in LunarScene.jsx uses only that shape, so the
+ * swap changes no drive physics, HUD, terrain, or controls.
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -165,14 +168,61 @@ export function createRoverGroup() {
 }
 
 /**
- * Generic GLB loader — the future Mondfahrzeug swap-in hook.
- * Returns the loaded scene (caller adds it to the drive scene and
- * wires its wheel/steer pivots, or drives it as one rigid group).
- * Not called anywhere yet: the Sketchfab download is blocked (401)
- * and the candidate model needs mesh simplification first (ROVER.md).
+ * Generic GLB loader — returns the loaded scene. Throws on load/parse
+ * failure (404, corrupt file, network error); the caller falls back
+ * to the code-built rover.
  */
 export async function loadRoverModel(url) {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(url);
   return gltf.scene;
+}
+
+/**
+ * Wire the loaded real-LRV GLB scene into the `{ group, wheels,
+ * steerGroups }` shape the animation loop uses — the same shape
+ * `createRoverGroup()` returns, so the loop works unchanged.
+ *
+ * Expected node tree (verified by re-importing the GLB into Blender):
+ *   EMPTY `lrv` (root, at origin, ground y=0)
+ *     MESH `body`
+ *     EMPTY `steer_front` — MESH `cover_L_F`, `cover_R_F`, `wheel_fl`, `wheel_fr`
+ *     EMPTY `steer_rear`  — MESH `cover_L_B`, `cover_R_B`, `wheel_rl`, `wheel_rr`
+ *
+ * Throws a clear error naming the missing node if any expected node
+ * is absent — the caller catches it and keeps the code-built rover.
+ */
+export function wireRealRover(scene) {
+  const group = scene.getObjectByName('lrv');
+  if (!group) {
+    throw new Error('wireRealRover: GLB scene has no node named "lrv"');
+  }
+  const wheels = {};
+  for (const key of ['fl', 'fr', 'rl', 'rr']) {
+    const wheel = scene.getObjectByName(`wheel_${key}`);
+    if (!wheel) {
+      throw new Error(`wireRealRover: GLB scene has no wheel node "wheel_${key}"`);
+    }
+    wheels[key] = wheel;
+  }
+  const steerGroups = {};
+  for (const key of ['front', 'rear']) {
+    const pivot = scene.getObjectByName(`steer_${key}`);
+    if (!pivot) {
+      throw new Error(`wireRealRover: GLB scene has no steer node "steer_${key}"`);
+    }
+    steerGroups[key] = pivot;
+  }
+  return { group, wheels, steerGroups };
+}
+
+/**
+ * Load the real LRV GLB and wire it, in one step. Resolves to the
+ * `{ group, wheels, steerGroups }` shape; rejects on load failure OR
+ * on a missing node (via wireRealRover) — either way the caller falls
+ * back to the code-built rover.
+ */
+export async function loadRealRover(url) {
+  const scene = await loadRoverModel(url);
+  return wireRealRover(scene);
 }

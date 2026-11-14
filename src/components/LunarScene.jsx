@@ -31,7 +31,7 @@ import { SITES } from '../lib/data.js';
 import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
 import { loadTerrainGrid, createTerrainLookup } from '../lib/terrain.js';
 import { buildTerrainGeometry, terrainRingPoints } from './terrainMesh.js';
-import { createRoverGroup } from './RoverModel.jsx';
+import { createRoverGroup, loadRealRover } from './RoverModel.jsx';
 
 const D2R = Math.PI / 180;
 
@@ -315,7 +315,8 @@ export default function LunarScene({
     // Drive mode therefore HIDES the Moon sphere/markers/LRO and
     // renders a tangent-plane frame centred on the site: the real LOLA
     // DEM heightfield (1200 m square; flat 500 m disc until it loads),
-    // the code-built rover at the origin, Sun/Earth
+    // the real Apollo LRV model at the origin (code-built rover until
+    // the GLB arrives, and permanently if it fails to load), Sun/Earth
     // placed by alt/az DIRECTION from the site (same ephemeris,
     // distances in metres). The rover moves in metres in this frame.
     const driveGroup = new THREE.Group();
@@ -410,9 +411,28 @@ export default function LunarScene({
         groundMat.needsUpdate = true;
       },
     };
-    // Code-built rover (see RoverModel.jsx for the GLB swap-in hook).
-    const roverParts = createRoverGroup();
+    // Real Apollo LRV model (GLB, public/models/lrv/) — loads
+    // asynchronously; the code-built rover drives until it arrives,
+    // and stays if the load fails or the GLB is missing a pivot.
+    // The swap only re-points the `roverParts` binding the animation
+    // loop already reads every frame, so drive physics, HUD, terrain,
+    // and controls are untouched. `roverLoadAlive` guards the swap
+    // if Drive mode / the scene is torn down before the load finishes.
+    let roverParts = createRoverGroup();
     driveGroup.add(roverParts.group);
+    let roverLoadAlive = true;
+    loadRealRover(`${base}models/lrv/lunar_roving_vehicle.glb`)
+      .then((real) => {
+        if (!roverLoadAlive) return;
+        driveGroup.remove(roverParts.group);
+        roverParts = real;
+        driveGroup.add(real.group);
+      })
+      .catch((err) => {
+        // 404, corrupt file, slow/failed network, or a missing node —
+        // the code-built rover keeps driving; nothing else changes.
+        console.warn('[rover] real LRV model unavailable — keeping the code-built rover:', err);
+      });
 
     // Camera orbit state (spherical around the Moon centre).
     const orbit = {
@@ -608,6 +628,7 @@ export default function LunarScene({
 
     return () => {
       dead = true;
+      roverLoadAlive = false;
       cancelAnimationFrame(raf);
       el.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
