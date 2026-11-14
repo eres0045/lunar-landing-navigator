@@ -1,0 +1,69 @@
+{
+ "sites": {
+  "haworth": {
+   "file": "terrain/nac/haworth.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "-23.185366,-86.772788,-22.486634,-86.733212",
+   "meanGrey": 70.3
+  },
+  "malapert": {
+   "file": "terrain/nac/malapert.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "-0.407970,-86.009788,0.157970,-85.970212",
+   "meanGrey": 105.8
+  },
+  "mouton-plateau": {
+   "file": "terrain/nac/mouton-plateau.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "29.729103,-84.251788,30.122897,-84.212212",
+   "meanGrey": 146.1
+  },
+  "mouton": {
+   "file": "terrain/nac/mouton.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "31.338023,-85.442788,31.833977,-85.403212",
+   "meanGrey": 132.1
+  },
+  "nobile1": {
+   "file": "terrain/nac/nobile1.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "36.992590,-85.450788,37.489410,-85.411212",
+   "meanGrey": 119.7
+  },
+  "gerlache2": {
+   "file": "terrain/nac/gerlache2.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "-66.059854,-88.244788,-64.782146,-88.205212",
+   "meanGrey": 158.1
+  },
+  "slater": {
+   "file": "terrain/nac/slater.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "125.736156,-87.168788,126.531844,-87.129212",
+   "meanGrey": 88.1
+  },
+  "connecting-ridge": {
+   "file": "terrain/nac/connecting-ridge.jpg",
+   "source": "LROC NAC controlled south-pole mosaic 1 m/px (luna_nac_pole_control_south, Lunaserv WMS)",
+   "licence": "NASA public domain",
+   "resolutionM": 1,
+   "bbox": "-139.216241,-89.459288,-135.170559,-89.419712",
+   "meanGrey": 122.7
+  }
+ },
+ "exposure": "Gamma 0.45 exposure lift applied uniformly at conversion (2026-11-14) for readability: the south-pole NAC mosaic is genuinely dark (means 17-90/255 at low Sun). Pixel values are the real NAC mosaic, relatively preserved \u2014 like raising exposure on a photo, not synthetic texture."
+}
