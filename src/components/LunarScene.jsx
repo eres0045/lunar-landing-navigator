@@ -37,6 +37,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sunEarthAt } from '../lib/ephemeris.js';
 import { SITES } from '../lib/data.js';
 import { createRover, step as roverStep, roverLatLon, setSurfaceHeightAt, resetSurfaceHeightAt } from '../lib/rover.js';
+import { driveChaseCamera } from '../lib/driveCamera.js';
 import { loadTerrainGrid, createTerrainLookup, textureStatusForSite } from '../lib/terrain.js';
 import { buildTerrainGeometry, terrainRingPoints, loadGroundTexture } from './terrainMesh.js';
 import { createRoverGroup, loadRealRover, driverCameraPose } from './RoverModel.jsx';
@@ -108,6 +109,7 @@ export default function LunarScene({
   date, site, verdicts, cameraCmd, onSelectSite,
   driveMode = false, driveCam = 'chase', driveInputRef, roverStateRef, maxSpeedKmh = 13,
   terrainShading = true, onTerrainStatus, onRoverModelStatus,
+  driveOrbitRef,
 }) {
   const mountRef = useRef(null);
   const [webglOk, setWebglOk] = useState(false);
@@ -538,6 +540,9 @@ export default function LunarScene({
     stateRef.current = orbit;
 
     // Drag to orbit, wheel to zoom, click a marker to select the site.
+    // In Drive mode the same drag orbits the chase camera 360° around
+    // the rover instead (theta = azimuth offset, drag down = camera
+    // rises — the same "grab the world" feel as the orbit view).
     let dragging = false;
     let downX = 0;
     let downY = 0;
@@ -546,6 +551,7 @@ export default function LunarScene({
     const pointer = new THREE.Vector2();
     const onPointerDown = (e) => {
       dragging = true; moved = 0; downX = e.clientX; downY = e.clientY;
+      if (propsRef.current.driveMode) return;
       // Dragging re-centres the view on the Moon.
       orbit.desired.look = new THREE.Vector3(0, 0, 0);
     };
@@ -556,11 +562,23 @@ export default function LunarScene({
       moved += Math.abs(dx) + Math.abs(dy);
       downX = e.clientX;
       downY = e.clientY;
+      if (propsRef.current.driveMode) {
+        // Chase-cam orbit only (driver cam is a fixed first-person
+        // pose); the rover keeps driving while the view swings round.
+        if (propsRef.current.driveCam === 'chase' && driveOrbitRef) {
+          const o = driveOrbitRef.current;
+          o.theta -= dx * 0.005;
+          o.elevM += dy * 0.02;
+          el.dataset.driveOrbitTheta = o.theta.toFixed(3);
+        }
+        return;
+      }
       orbit.desired.theta -= dx * 0.005;
       orbit.desired.phi = Math.max(0.15, Math.min(Math.PI - 0.15, orbit.desired.phi - dy * 0.005));
     };
     const onPointerUp = (e) => {
       dragging = false;
+      if (propsRef.current.driveMode) return; // no markers in Drive mode
       if (moved > 6) return; // it was a drag, not a click
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
@@ -570,6 +588,15 @@ export default function LunarScene({
     };
     const onWheel = (e) => {
       e.preventDefault();
+      if (propsRef.current.driveMode) {
+        // Desktop: wheel zooms the chase camera in/out (4–12 m).
+        if (propsRef.current.driveCam === 'chase' && driveOrbitRef) {
+          const o = driveOrbitRef.current;
+          o.distM += e.deltaY > 0 ? 1 : -1;
+          el.dataset.driveOrbitTheta = o.theta.toFixed(3);
+        }
+        return;
+      }
       orbit.desired.radius = Math.max(1.7, Math.min(9, orbit.desired.radius * (e.deltaY > 0 ? 1.12 : 0.89)));
     };
     const el = renderer.domElement;
@@ -615,6 +642,10 @@ export default function LunarScene({
         // surface black. 0.7 keeps the NAC texture + DEM shading
         // readable; the Sun + shadows still carry the contrast.
         ambientLight.intensity = 0.7;
+        // Live readout of the chase-cam orbit angle (drag / wheel /
+        // Reset-view all flow through the same ref) for the mobile
+        // probe and any external check.
+        el.dataset.driveOrbitTheta = String((driveOrbitRef?.current?.theta ?? 0).toFixed(3));
 
         const rover = roverStateRef?.current;
         const input = driveInputRef?.current || {};
@@ -640,8 +671,8 @@ export default function LunarScene({
           dust.update(dt, rover);
           tracks.update(rover);
 
-          // Chase cam (behind/above, follows heading) or driver cam.
-          const fwd = new THREE.Vector3(Math.sin(rover.headingRad), 0, Math.cos(rover.headingRad));
+          // Chase cam (behind/above, follows heading, orbits 360°
+          // around the rover when the driver drags) or driver cam.
           const pos = roverParts.group.position;
           let camTarget;
           let lookTarget;
@@ -653,8 +684,13 @@ export default function LunarScene({
             camTarget = pose.camera;
             lookTarget = pose.lookAt;
           } else {
-            camTarget = pos.clone().addScaledVector(fwd, -7).add(new THREE.Vector3(0, 3.2, 0));
-            lookTarget = pos.clone().addScaledVector(fwd, 5).add(new THREE.Vector3(0, 1, 0));
+            const chase = driveChaseCamera(
+              { x: pos.x, y: pos.y, z: pos.z },
+              rover.headingRad,
+              driveOrbitRef?.current,
+            );
+            camTarget = new THREE.Vector3(chase.camera.x, chase.camera.y, chase.camera.z);
+            lookTarget = new THREE.Vector3(chase.lookAt.x, chase.lookAt.y, chase.lookAt.z);
           }
           camera.position.lerp(camTarget, driveCam === 'driver' ? 0.5 : 0.12);
           // On a chase<->driver toggle, SNAP the camera to the new pose
@@ -772,7 +808,7 @@ export default function LunarScene({
   }, []);
 
   return (
-    <div ref={mountRef} className="absolute inset-0" data-testid="lunar-scene">
+    <div ref={mountRef} className="absolute inset-0 touch-none" data-testid="lunar-scene">
       {!webglOk && (
       <div className="flex h-full items-center justify-center p-6 text-center">
         <p className="max-w-sm text-sm leading-relaxed text-slate-300">

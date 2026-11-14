@@ -24,6 +24,7 @@ import {
   LRV, createRover, roverVerdict, headingDeg,
   speedKmh, distanceFromStart,
 } from './lib/rover.js';
+import { DEFAULT_DRIVE_ORBIT } from './lib/driveCamera.js';
 import LunarScene, { CAMERA_PRESETS } from './components/LunarScene.jsx';
 import { preloadRealRover } from './components/RoverModel.jsx';
 
@@ -142,12 +143,25 @@ export default function App() {
       ? 'Terrain: loading real LOLA DEM…'
       : 'Terrain: flat — DEM unavailable (smooth-sphere fallback)';
   const driveInputRef = useRef({ throttle: 0, reverse: 0, steer: 0, brake: false });
+  // Chase-cam orbit (drag to look around the rover, 360°): theta =
+  // azimuth offset from directly behind, elevM = height offset,
+  // distM = zoom offset. Owned here so the HUD's Reset-view button
+  // can clear it; LunarScene reads it every frame.
+  const driveOrbitRef = useRef({ ...DEFAULT_DRIVE_ORBIT });
   const roverStateRef = useRef(null);
   const [hud, setHud] = useState(null);
   const exitDrive = () => {
     driveInputRef.current = { throttle: 0, reverse: 0, steer: 0, brake: false };
     setDriveMode(false);
   };
+  // Hold-to-drive wiring for the floating touch buttons: press sets
+  // the input, release (up / leave / cancel) clears it.
+  const driveHold = (apply, release) => ({
+    onPointerDown: (e) => { e.preventDefault(); apply(); },
+    onPointerUp: release,
+    onPointerLeave: release,
+    onPointerCancel: release,
+  });
   const enterDrive = () => {
     if (!roverStateRef.current || roverStateRef.current.siteId !== site.id) {
       roverStateRef.current = createRover(site, { maxSpeedKmh });
@@ -267,6 +281,7 @@ export default function App() {
           terrainShading={terrainShading}
           onTerrainStatus={setTerrainStatus}
           onRoverModelStatus={setRoverModelStatus}
+          driveOrbitRef={driveOrbitRef}
         />
       </div>
 
@@ -328,6 +343,11 @@ export default function App() {
               className="flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-2 py-1.5 text-xs font-semibold text-slate-200">
               ⛰️ DEM shading: {terrainShading ? 'on' : 'off'}
             </button>
+            <button type="button" onClick={() => { driveOrbitRef.current = { ...DEFAULT_DRIVE_ORBIT }; }}
+              aria-label="Reset drive camera view" data-testid="drive-reset-view"
+              className="flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-2 py-1.5 text-xs font-semibold text-slate-200">
+              ⟲ Reset view
+            </button>
           </div>
           <div className="mt-2 flex gap-1.5">
             <button type="button" onClick={exitDrive} aria-label="Exit drive mode"
@@ -335,47 +355,43 @@ export default function App() {
               ← Back to orbit (Esc)
             </button>
           </div>
-          {/* Touch controls — hold to drive. */}
-          <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label="Touch drive controls">
-            <span />
-            <button type="button" data-testid="drive-btn-forward" aria-label="Hold to drive forward"
-              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.throttle = 1; }}
-              onPointerUp={() => { driveInputRef.current.throttle = 0; }}
-              onPointerLeave={() => { driveInputRef.current.throttle = 0; }}
-              onPointerCancel={() => { driveInputRef.current.throttle = 0; }}
-              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▲</button>
-            <span />
-            <button type="button" data-testid="drive-btn-left" aria-label="Hold to steer left"
-              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.steer = -1; }}
-              onPointerUp={() => { driveInputRef.current.steer = 0; }}
-              onPointerLeave={() => { driveInputRef.current.steer = 0; }}
-              onPointerCancel={() => { driveInputRef.current.steer = 0; }}
-              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">◀</button>
-            <button type="button" data-testid="drive-btn-brake" aria-label="Hold to brake"
-              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.brake = true; }}
-              onPointerUp={() => { driveInputRef.current.brake = false; }}
-              onPointerLeave={() => { driveInputRef.current.brake = false; }}
-              onPointerCancel={() => { driveInputRef.current.brake = false; }}
-              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-rose-400/40">⏹</button>
-            <button type="button" data-testid="drive-btn-right" aria-label="Hold to steer right"
-              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.steer = 1; }}
-              onPointerUp={() => { driveInputRef.current.steer = 0; }}
-              onPointerLeave={() => { driveInputRef.current.steer = 0; }}
-              onPointerCancel={() => { driveInputRef.current.steer = 0; }}
-              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▶</button>
-            <span />
-            <button type="button" data-testid="drive-btn-reverse" aria-label="Hold to reverse"
-              onPointerDown={(e) => { e.preventDefault(); driveInputRef.current.reverse = 1; }}
-              onPointerUp={() => { driveInputRef.current.reverse = 0; }}
-              onPointerLeave={() => { driveInputRef.current.reverse = 0; }}
-              onPointerCancel={() => { driveInputRef.current.reverse = 0; }}
-              className="rounded-lg border border-white/15 bg-white/[0.08] px-2 py-2 text-lg font-bold text-slate-100 active:bg-emerald-400/40">▼</button>
-            <span />
-          </div>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-            Keys: W/↑ forward · S/↓ reverse · A/D or ←/→ steer · Space brake · Esc exit.
+            Drag the scene to look around the rover (360°) — drag down to rise higher, wheel to zoom.
+            Hold the on-screen ▲▼◀▶ buttons (always visible, bottom corners) or use keys:
+            W/↑ forward · S/↓ reverse · A/D or ←/→ steer · Space brake · Esc exit.
           </p>
           </>)}
+        </div>
+      )}
+
+      {/* Floating touch drive controls — always visible in Drive mode,
+          even when the HUD is minimised (that hid them on phones).
+          Small, transparent, bottom corners; the container lets canvas
+          drags pass through everywhere except on the buttons. */}
+      {driveMode && (
+        <div data-testid="drive-touch-controls" role="group" aria-label="Touch drive controls"
+          className="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex items-end justify-between px-3">
+          <div className="pointer-events-auto flex gap-2">
+            <button type="button" data-testid="drive-btn-left" aria-label="Hold to steer left"
+              {...driveHold(() => { driveInputRef.current.steer = -1; }, () => { driveInputRef.current.steer = 0; })}
+              className="h-11 w-11 touch-none select-none rounded-full border border-white/15 bg-white/[0.06] text-lg font-bold text-slate-100 backdrop-blur-sm active:bg-emerald-400/40">◀</button>
+            <button type="button" data-testid="drive-btn-right" aria-label="Hold to steer right"
+              {...driveHold(() => { driveInputRef.current.steer = 1; }, () => { driveInputRef.current.steer = 0; })}
+              className="h-11 w-11 touch-none select-none rounded-full border border-white/15 bg-white/[0.06] text-lg font-bold text-slate-100 backdrop-blur-sm active:bg-emerald-400/40">▶</button>
+          </div>
+          <div className="pointer-events-auto flex flex-col items-end gap-2">
+            <button type="button" data-testid="drive-btn-forward" aria-label="Hold to drive forward"
+              {...driveHold(() => { driveInputRef.current.throttle = 1; }, () => { driveInputRef.current.throttle = 0; })}
+              className="h-11 w-11 touch-none select-none rounded-full border border-white/15 bg-white/[0.06] text-lg font-bold text-slate-100 backdrop-blur-sm active:bg-emerald-400/40">▲</button>
+            <div className="flex gap-2">
+              <button type="button" data-testid="drive-btn-brake" aria-label="Hold to brake"
+                {...driveHold(() => { driveInputRef.current.brake = true; }, () => { driveInputRef.current.brake = false; })}
+                className="h-11 w-11 touch-none select-none rounded-full border border-white/15 bg-white/[0.06] text-lg font-bold text-slate-100 backdrop-blur-sm active:bg-rose-400/40">⏹</button>
+              <button type="button" data-testid="drive-btn-reverse" aria-label="Hold to reverse"
+                {...driveHold(() => { driveInputRef.current.reverse = 1; }, () => { driveInputRef.current.reverse = 0; })}
+                className="h-11 w-11 touch-none select-none rounded-full border border-white/15 bg-white/[0.06] text-lg font-bold text-slate-100 backdrop-blur-sm active:bg-emerald-400/40">▼</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -456,7 +472,7 @@ export default function App() {
               <button type="button" onClick={enterDrive} aria-label="Drive on the surface"
                 className="mt-2 block w-full rounded-lg border border-rose-400/40 bg-rose-400/10 px-3 py-2 text-left text-sm font-semibold text-rose-200 hover:border-rose-300">
                 🚀 Drive on the surface — explore {site.name} by rover
-                <span className="block text-xs font-normal text-slate-400">Real Apollo LRV model · WASD / arrows to drive, Space to brake, Esc to return to orbit</span>
+                <span className="block text-xs font-normal text-slate-400">Real Apollo LRV model · Drag to look around (360°) · On-screen buttons or WASD to drive · Space brake · Esc exit</span>
               </button>
 
               {/* Site picker */}

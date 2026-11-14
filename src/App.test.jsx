@@ -236,4 +236,34 @@ describe('App — lunar navigator (jsdom has no WebGL)', () => {
     fireEvent.click(toggle);
     expect(screen.getByTestId('drive-speed')).toBeTruthy();
   });
+
+  it('Drive mode: floating touch buttons stay visible when the HUD is minimised', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    // Floating controls exist alongside the HUD…
+    expect(screen.getByTestId('drive-touch-controls')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-forward')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-left')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-right')).toBeTruthy();
+    // …and survive the minimise that hides the telemetry (the phone
+    // bug: the old D-pad lived inside the collapsible HUD body).
+    fireEvent.click(screen.getByTestId('drive-hud-toggle'));
+    expect(screen.queryByTestId('drive-speed')).toBeNull();
+    expect(screen.getByTestId('drive-touch-controls')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-forward')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-brake')).toBeTruthy();
+    expect(screen.getByTestId('drive-btn-reverse')).toBeTruthy();
+    // Holding a button is a press, not a click — pointerdown/up.
+    fireEvent.pointerDown(screen.getByTestId('drive-btn-forward'));
+    fireEvent.pointerUp(screen.getByTestId('drive-btn-forward'));
+  });
+
+  it('Drive mode: reset-view button exists and resets without crashing', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Drive on the surface' }));
+    const reset = screen.getByTestId('drive-reset-view');
+    expect(reset.textContent).toContain('Reset view');
+    fireEvent.click(reset);
+    expect(screen.getByTestId('drive-hud')).toBeTruthy();
+  });
 });
