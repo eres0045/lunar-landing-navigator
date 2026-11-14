@@ -54,7 +54,7 @@ handbook's precise wheelbase/track, and says so above.
   published LRV dimensions → assemble → GLB export.
   - Decimate: body 0.2× (271,486 → 54,297 tris), each wheel 0.2×
     (~44,000 → ~8,800 tris), each wheel cover 0.5× (~3,600–4,150 →
-    ~1,785–2,074 tris). Imported parts totalled 371,237 tris before
+    ~1,785–2,074 tris). Imported parts totalled 375,237 tris before
     decimation (Sketchfab lists 464,143 faces for the source model);
     **the shipped GLB is 97,340 tris**.
   - Scale: body length 2.964 → 3.1 m, width 1.553 → 1.83 m; wheel
