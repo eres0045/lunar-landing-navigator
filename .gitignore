@@ -1,0 +1,9 @@
+node_modules/
+dist/
+preview/
+
+# Local Netlify folder
+.netlify
+
+__pycache__/
+*.pyc

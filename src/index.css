@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+html {
+  background-color: #000000;
+}
+
+body {
+  background-color: #000000;
+  color: #f1f5f9;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Text over the truly-transparent glass panel / starfield: a soft dark
+ * shadow keeps it readable over bright stars without a solid backing. */
+.glass-text {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0, 0, 0, 0.6);
+}
+
+canvas {
+  display: block;
+}
+
+/* Mission brief printing: hide the 3D scene + panel, print only the
+ * brief card (light text becomes black on white for the paper). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .brief-print,
+  .brief-print * {
+    visibility: visible;
+    color: #000 !important;
+    background: transparent !important;
+    border-color: #999 !important;
+    text-shadow: none !important;
+  }
+  .brief-print {
+    position: absolute;
+    inset: 0;
+    max-height: none;
+    overflow: visible;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
